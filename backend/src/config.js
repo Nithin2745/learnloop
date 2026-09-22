@@ -10,7 +10,7 @@ const PROVIDERS = {
   groq: {
     apiKeyEnv: 'GROQ_API_KEY',
     baseURL: undefined, // groq-sdk default: https://api.groq.com
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
   },
   openrouter: {
     apiKeyEnv: 'OPENROUTER_API_KEY',
