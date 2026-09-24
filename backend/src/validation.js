@@ -136,3 +136,66 @@ export function validateLearnInput(body) {
 export function validateReviseInput(body) {
   return validateTopicsList(body);
 }
+
+const MAX_LEVEL_LEN = 40;
+
+/**
+ * Validate POST /api/expand-topics: same topics list as learn/revise, plus an
+ * optional short `level` hint (e.g. "undergraduate"). Blank/oversized levels
+ * are dropped to "" rather than rejected.
+ */
+export function validateExpandInput(body) {
+  const base = validateTopicsList(body);
+  if (!base.valid) return base;
+  let level = typeof body?.level === 'string' ? body.level.trim() : '';
+  if (level.length > MAX_LEVEL_LEN) level = level.slice(0, MAX_LEVEL_LEN);
+  return { valid: true, errors: [], value: { topics: base.value.topics, level } };
+}
+
+const MAX_QUESTION_LEN = 2_000;
+const MAX_REFERENCE_LEN = 4_000;
+const MAX_STUDENT_LEN = 4_000;
+
+/**
+ * Validate POST /api/grade: a student's typed answer to a question.
+ * `topic`, `question`, `studentAnswer` are required non-empty strings within
+ * length caps (bounds the untrusted answer fed to the LLM); `referenceAnswer`
+ * is optional and defaults to "" (the grader then uses the standard answer).
+ */
+export function validateGradeInput(body) {
+  const errors = [];
+  const b = body || {};
+
+  const topic = typeof b.topic === 'string' ? b.topic.trim() : '';
+  if (!topic) {
+    errors.push('topic is required and must be a non-empty string.');
+  } else if (topic.length > MAX_TOPIC_LEN) {
+    errors.push(`topic must be at most ${MAX_TOPIC_LEN} characters.`);
+  }
+
+  const question = typeof b.question === 'string' ? b.question.trim() : '';
+  if (!question) {
+    errors.push('question is required and must be a non-empty string.');
+  } else if (question.length > MAX_QUESTION_LEN) {
+    errors.push(`question must be at most ${MAX_QUESTION_LEN} characters.`);
+  }
+
+  const studentAnswer = typeof b.studentAnswer === 'string' ? b.studentAnswer.trim() : '';
+  if (!studentAnswer) {
+    errors.push('studentAnswer is required and must be a non-empty string.');
+  } else if (studentAnswer.length > MAX_STUDENT_LEN) {
+    errors.push(`studentAnswer must be at most ${MAX_STUDENT_LEN} characters.`);
+  }
+
+  let referenceAnswer = typeof b.referenceAnswer === 'string' ? b.referenceAnswer.trim() : '';
+  if (referenceAnswer.length > MAX_REFERENCE_LEN) {
+    referenceAnswer = referenceAnswer.slice(0, MAX_REFERENCE_LEN);
+  }
+
+  if (errors.length > 0) return { valid: false, errors, value: null };
+  return {
+    valid: true,
+    errors: [],
+    value: { topic, question, referenceAnswer, studentAnswer },
+  };
+}

@@ -22,7 +22,16 @@ const clients = new Map();
 export function getClientFor(cfg) {
   let client = clients.get(cfg.provider);
   if (!client) {
-    client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
+    // Bound each request so a slow/hung provider fails fast and the chain
+    // (llmJson.js) can fall through to the next one, instead of the SDK's
+    // 10-minute default holding the whole request open. maxRetries: 1 keeps a
+    // single quick retry for a transient blip without stalling fall-through.
+    client = new OpenAI({
+      apiKey: cfg.apiKey,
+      baseURL: cfg.baseURL,
+      timeout: 60_000,
+      maxRetries: 1,
+    });
     clients.set(cfg.provider, client);
   }
   return {

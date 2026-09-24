@@ -5,6 +5,8 @@ import LoadingState from './components/LoadingState.jsx';
 import Results from './components/Results.jsx';
 import LearnMode from './components/LearnMode.jsx';
 import RevisionMode from './components/RevisionMode.jsx';
+import Login from './components/Login.jsx';
+import { useAuth } from './auth/AuthProvider.jsx';
 import { generatePlan, generateLearning, generateRevision } from './api.js';
 import { dedupeByBase } from './lib/topics.js';
 
@@ -53,6 +55,8 @@ function PlanError({ message, onRetry }) {
 }
 
 export default function App() {
+  const { user, loading: authLoading, signOut } = useAuth();
+
   const [setup, setSetup] = useState(null); // { topics: string[], examDate, hoursPerDay }
   const [mode, setMode] = useState('plan'); // 'plan' | 'learn' | 'revise'
 
@@ -136,6 +140,16 @@ export default function App() {
 
   const reviseTopics = setup ? dedupeByBase(setup.topics) : [];
 
+  // Auth gate: wait for the stored session to load, then require sign-in.
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500" />
+      </div>
+    );
+  }
+  if (!user) return <Login />;
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-200/70 bg-white/70 backdrop-blur">
@@ -151,9 +165,9 @@ export default function App() {
               </p>
             </div>
           </div>
-          {setup && (
-            <div className="ml-auto flex items-center gap-2">
-              <ModeNav mode={mode} onChange={setMode} />
+          <div className="ml-auto flex items-center gap-2">
+            {setup && <ModeNav mode={mode} onChange={setMode} />}
+            {setup && (
               <button
                 type="button"
                 onClick={handleNewSetup}
@@ -161,8 +175,15 @@ export default function App() {
               >
                 New setup
               </button>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              onClick={signOut}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 

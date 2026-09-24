@@ -1,33 +1,27 @@
 /**
  * Builds the chat messages for the study-plan request.
  *
+ * The model no longer authors the calendar. It only analyses each topic —
+ * difficulty, a relative 1-5 weight, and practice questions — and returns a
+ * small, bounded JSON object. scheduleBuilder.js turns that into the concrete
+ * day-by-day schedule. Keeping the model's output constant-size (a handful of
+ * topics rather than one entry per day to the exam) is what makes generation
+ * fast and reliable regardless of how distant the exam is.
+ *
  * The system prompt hard-constrains the model to emit ONLY the target JSON
  * object (no markdown fences, no prose). The exact schema is spelled out so
  * the model has no room to improvise field names.
  */
 
 const SCHEMA_DESCRIPTION = `{
-  "totalDays": number,                       // number of calendar days in the schedule
-  "schedule": [
+  "topics": [
     {
-      "date": "YYYY-MM-DD",
-      "dayLabel": "Day 1",                  // "Day 1", "Day 2", ...
-      "topics": [
-        {
-          "name": string,
-          "difficulty": "easy" | "medium" | "hard",
-          "estimatedHours": number,           // hours to spend on this topic that day
-          "isReview": boolean                 // true when this is a spaced-repetition revisit
-        }
-      ],
-      "isBufferDay": boolean                  // true for light revision/buffer days
-    }
-  ],
-  "practiceQuestions": [
-    {
-      "topic": string,
-      "questions": [                          // 3-5 items per topic
-        { "question": string, "answer": string }
+      "name": string,                          // the topic, cleaned up
+      "difficulty": "easy" | "medium" | "hard",
+      "weight": number,                         // 1-5 relative study effort
+                                                //   (harder / broader / heavier = higher)
+      "practiceQuestions": [                    // 3-5 items per topic
+        { "question": string, "answer": string }  // answer: 1-3 sentences
       ]
     }
   ]
@@ -35,33 +29,24 @@ const SCHEMA_DESCRIPTION = `{
 
 const SYSTEM_PROMPT = `You are LearnLoop, an expert academic study planner.
 
-You produce a day-by-day revision schedule and practice questions from a
-student's topic list and exam date.
+You analyse a student's topic list so a scheduler can build their revision
+calendar. You do NOT build the calendar or assign dates yourself.
 
 Follow these rules exactly:
-1. Parse the topics from the free-text list. Topics may be one-per-line or
-   comma-separated and may include difficulty hints (e.g. "Thermodynamics (hard)").
-2. Estimate each topic's difficulty ("easy" | "medium" | "hard") and relative
-   weight. If the student gave a hint, honour it; otherwise judge it yourself.
-3. Distribute topics across the days remaining before the exam, respecting the
-   student's available study hours per day. Harder / heavier topics get more
-   total time. Do not exceed the daily hour budget; the sum of estimatedHours
-   on a day may be at or below the budget.
-4. Use SPACED REPETITION. Schedule harder and heavier topics for MULTIPLE
-   sessions on different days, with increasing gaps between revisits (e.g. a
-   hard topic studied on Day 1 might be reviewed on Day 3, then Day 7).
-   - The FIRST time a topic appears, set "isReview": false.
-   - Every later revisit of that same topic sets "isReview": true and should be
-     shorter than the first pass.
-   - Easy topics may appear only once ("isReview": false).
-5. Reserve the last 1-2 days before the exam as light revision / buffer days:
-   mark them "isBufferDay": true, keep their load light, and use them for
-   review rather than new material.
-6. Produce 3-5 practice questions per topic — a mix of conceptual and applied.
+1. Parse the distinct topics from the free-text list. Topics may be one-per-line
+   or comma-separated and may include difficulty hints (e.g. "Thermodynamics
+   (hard)"). Clean up each topic name.
+2. For each topic, judge its "difficulty" ("easy" | "medium" | "hard"). If the
+   student gave a hint, honour it; otherwise decide yourself.
+3. For each topic, give a "weight" from 1 to 5 — the relative amount of study
+   effort it deserves. Harder, broader, or more foundational topics score
+   higher; small or simple topics score lower.
+4. Produce 3-5 practice questions per topic — a mix of conceptual and applied.
    Each question includes a concise "answer" (1-3 sentences: the answer or a
-   short explanation / worked idea, not a full essay).
-7. Every date must fall on or before the exam date and be a real calendar date.
-   Label days sequentially ("Day 1", "Day 2", ...).
+   short worked idea, not a full essay).
+
+Do NOT include dates, day numbers, a schedule, hours, or spaced-repetition
+planning — those are computed separately from your ratings.
 
 OUTPUT FORMAT — CRITICAL:
 Return ONLY a single valid JSON object matching this schema. No markdown code
@@ -71,21 +56,17 @@ of your response must be "{" and the last must be "}".
 Schema:
 ${SCHEMA_DESCRIPTION}`;
 
-export function buildMessages({ topics, examDate, hoursPerDay, today, daysRemaining }) {
-  const userPrompt = `Create my study plan.
-
-Today's date: ${today}
-Exam date: ${examDate}
-Days remaining until the exam (today counts as a study day): ${daysRemaining}
-Study hours available per day: ${hoursPerDay}
+export function buildMessages({ topics }) {
+  const userPrompt = `Analyse my topics for a study plan.
 
 Topics (free text):
 """
 ${topics}
 """
 
-Remember: respond with ONLY the JSON object described in the schema. Use
-spaced repetition for harder topics and give every practice question an answer.`;
+For each distinct topic give its difficulty, a 1-5 weight, and 3-5 practice
+questions with concise answers. Respond with ONLY the JSON object described in
+the schema — no dates, no schedule, no prose.`;
 
   return [
     { role: 'system', content: SYSTEM_PROMPT },

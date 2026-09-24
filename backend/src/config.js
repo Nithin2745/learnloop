@@ -59,7 +59,10 @@ function resolveProvider(name) {
     apiKey: process.env[p.apiKeyEnv],
     baseURL: p.baseURL,
     model: perProviderModel || p.model,
-    maxTokens: Number(process.env.LLM_MAX_TOKENS) || 8000,
+    // Learn explanations now carry prerequisites, a worked example, and
+    // misconceptions per depth level, so a multi-depth batch is token-heavy.
+    // Keep the ceiling generous to avoid truncation -> PARSE_FAILED.
+    maxTokens: Number(process.env.LLM_MAX_TOKENS) || 12000,
   };
 }
 
@@ -112,4 +115,20 @@ export const serverConfig = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+};
+
+/**
+ * Supabase auth. We verify the user's access token against the project's public
+ * JWKS (asymmetric ES256/RS256 keys) — no server secret is needed, so nothing
+ * here is sensitive. `SUPABASE_URL` is the only required value; the JWKS URI and
+ * token issuer are derived from it. `supabaseJwtSecret` is an optional fallback
+ * for legacy projects that still sign tokens with a shared HS256 secret.
+ */
+const supabaseUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+export const authConfig = {
+  supabaseUrl,
+  configured: supabaseUrl.length > 0,
+  issuer: supabaseUrl ? `${supabaseUrl}/auth/v1` : '',
+  jwksUri: supabaseUrl ? `${supabaseUrl}/auth/v1/.well-known/jwks.json` : '',
+  supabaseJwtSecret: (process.env.SUPABASE_JWT_SECRET || '').trim(),
 };

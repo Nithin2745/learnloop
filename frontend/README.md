@@ -22,9 +22,9 @@ backend, set `VITE_API_BASE_URL` (see `.env.example`).
 - `src/components/TopicPicker.jsx` + `SubjectTree.jsx` — upload a syllabus PDF (parsed in-browser) and pick topics from a Subject → Unit tree
 - `src/lib/pdf.js` — client-side PDF text extraction + page chunking (pdfjs-dist)
 - `src/components/ModeNav.jsx` — Plan / Learn / Revise switch
-- `src/components/Results.jsx` + `ScheduleTab.jsx` + `DayCard.jsx` + `LoadChart.jsx` — Plan mode: day-by-day timeline + load chart
+- `src/components/Results.jsx` + `ScheduleTab.jsx` + `DayCard.jsx` — Plan mode: day-by-day timeline
 - `src/components/PracticeQuestionsTab.jsx` — Plan mode: practice Q&A grouped by topic
-- `src/components/LearnMode.jsx` + `ConceptCard.jsx` — Learn mode: topics grouped by level, with analogy + key points + steps
+- `src/components/LearnMode.jsx` + `ConceptCard.jsx` + `ConceptVisual.jsx` — Learn mode: topics grouped by level, with analogy + key points + steps + a small concept diagram (flow / hierarchy / compare)
 - `src/components/RevisionMode.jsx` + `FlashcardDeck.jsx` + `Flashcard.jsx` — Revise mode: flip-card deck + important Q&A
 - `src/components/Accordion.jsx` — shared show/hide list (Practice + Revision Q&A)
 - `src/components/DifficultyTag.jsx` — easy/medium/hard pill

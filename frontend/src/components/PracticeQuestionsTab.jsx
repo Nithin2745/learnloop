@@ -1,12 +1,12 @@
-import { useState } from 'react';
 import Accordion from './Accordion.jsx';
+import AnswerGrader from './AnswerGrader.jsx';
 import { gfgSearchUrl } from '../lib/resources.js';
 
-function QuestionItem({ index, item }) {
-  const [show, setShow] = useState(false);
+function QuestionItem({ index, item, topic }) {
   // Tolerate either a bare string or a { question, answer } object.
   const question = typeof item === 'string' ? item : item?.question ?? '';
   const answer = typeof item === 'string' ? '' : item?.answer ?? '';
+  if (!question) return null;
 
   return (
     <li className="rounded-xl bg-slate-50/70 p-3 text-sm">
@@ -14,23 +14,9 @@ function QuestionItem({ index, item }) {
         <span className="font-medium text-slate-400">{index + 1}.</span>
         <div className="min-w-0 flex-1">
           <p className="text-slate-700">{question}</p>
-          {answer && (
-            <>
-              <button
-                type="button"
-                onClick={() => setShow((s) => !s)}
-                aria-expanded={show}
-                className="mt-1.5 text-xs font-medium text-indigo-600 transition hover:text-indigo-700"
-              >
-                {show ? 'Hide answer' : 'Show answer'}
-              </button>
-              {show && (
-                <p className="mt-1.5 rounded-lg bg-white px-3 py-2 text-slate-600 ring-1 ring-slate-100">
-                  {answer}
-                </p>
-              )}
-            </>
-          )}
+          {/* Active recall: type an answer and get it graded (the stored answer,
+              when present, is the reference the grader marks against). */}
+          <AnswerGrader topic={topic} question={question} referenceAnswer={answer} />
         </div>
       </div>
     </li>
@@ -62,7 +48,7 @@ export default function PracticeQuestionsTab({ groups }) {
           </a>
           <ol className="space-y-3">
             {(group.questions || []).map((q, qi) => (
-              <QuestionItem key={qi} index={qi} item={q} />
+              <QuestionItem key={qi} index={qi} item={q} topic={group.topic} />
             ))}
           </ol>
         </>

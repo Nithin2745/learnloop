@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import FlashcardDeck from './FlashcardDeck.jsx';
 import Accordion from './Accordion.jsx';
+import AnswerGrader from './AnswerGrader.jsx';
 import { gfgSearchUrl } from '../lib/resources.js';
 
 /**
@@ -22,31 +23,42 @@ export default function RevisionMode({ topics, cache, onGenerate }) {
   const state = entry?.state ?? 'idle';
   const data = entry?.data;
 
-  // Richer Q&A: a full answer, optional key points, and an optional example.
+  // Active recall: type an answer and get graded, then reveal the full model
+  // answer (with key points / example) behind a toggle so it doesn't spoil recall.
   const qaItems = (data?.questions || []).map((q, i) => ({
     id: i,
     title: q.question,
     render: () => (
       <div className="space-y-3">
-        <p className="text-sm leading-relaxed text-slate-600">{q.answer}</p>
-        {q.keyPoints?.length > 0 && (
-          <ul className="space-y-1.5">
-            {q.keyPoints.map((pt, j) => (
-              <li key={j} className="flex gap-2 text-sm text-slate-600">
-                <span className="mt-1 text-indigo-400" aria-hidden="true">
-                  ◆
-                </span>
-                <span className="leading-relaxed">{pt}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {q.example && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Example</p>
-            <p className="mt-0.5 text-sm leading-relaxed text-slate-600">{q.example}</p>
+        <AnswerGrader topic={selected} question={q.question} referenceAnswer={q.answer} />
+        <details className="rounded-lg border border-slate-200 bg-slate-50">
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-500 transition hover:text-slate-700">
+            Show model answer
+          </summary>
+          <div className="space-y-3 border-t border-slate-200 px-3 py-3">
+            <p className="text-sm leading-relaxed text-slate-600">{q.answer}</p>
+            {q.keyPoints?.length > 0 && (
+              <ul className="space-y-1.5">
+                {q.keyPoints.map((pt, j) => (
+                  <li key={j} className="flex gap-2 text-sm text-slate-600">
+                    <span className="mt-1 text-indigo-400" aria-hidden="true">
+                      ◆
+                    </span>
+                    <span className="leading-relaxed">{pt}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {q.example && (
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Example
+                </p>
+                <p className="mt-0.5 text-sm leading-relaxed text-slate-600">{q.example}</p>
+              </div>
+            )}
           </div>
-        )}
+        </details>
       </div>
     ),
   }));

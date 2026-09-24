@@ -7,28 +7,36 @@ import {
   validateExtractInput,
   validateLearnInput,
   validateReviseInput,
+  validateExpandInput,
+  validateGradeInput,
 } from './validation.js';
 import { generatePlan } from './planService.js';
 import { extractTopics } from './extractService.js';
+import { expandTopics } from './expandService.js';
 import { generateLearning } from './learnService.js';
 import { generateRevision } from './reviseService.js';
+import { gradeAnswer } from './gradeService.js';
+import { requireAuth } from './auth.js';
 
 const app = express();
 
 app.use(cors({ origin: serverConfig.corsOrigins }));
 app.use(express.json({ limit: '1mb' }));
 
-// Basic abuse guard for the unauthenticated, paid LLM endpoints. Limits are
-// deliberately generous so a normal study session is never blocked — a large
-// syllabus fans out to several /extract-topics calls, and Learn/Revise
-// generate per topic — while still capping runaway automated abuse of the
-// (metered) AI provider. Tune windowMs/limit for your deployment, and swap in
-// a shared store (e.g. Redis) if you run more than one instance.
+// Per-user abuse guard for the paid LLM endpoints. requireAuth runs first (see
+// the /api router below), so every limited request carries a req.user and we
+// key the window by user id — each signed-in user gets their own generous
+// budget instead of sharing one per-IP bucket. Limits are deliberately generous
+// so a normal study session is never blocked — a large syllabus fans out to
+// several /extract-topics calls, and Learn/Revise generate per topic — while
+// still capping runaway abuse of the (metered) AI provider. Swap in a shared
+// store (e.g. Redis) if you run more than one instance.
 const llmLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100, // requests per IP per window
+  limit: 100, // requests per user per window
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => req.user.id,
   message: { error: 'Too many requests. Please wait a few minutes and try again.' },
 });
 
@@ -59,7 +67,15 @@ function sendLlmError(res, err, label) {
   }
 }
 
-app.post('/api/generate-plan', llmLimiter, async (req, res) => {
+// All study endpoints live behind sign-in. requireAuth (401 on a missing or
+// invalid token) runs before llmLimiter so anonymous traffic is rejected
+// without consuming rate-limit budget, and so the limiter can key by user id.
+// GET /api/health is registered on `app` above, so it stays public.
+const api = express.Router();
+api.use(requireAuth);
+api.use(llmLimiter);
+
+api.post('/generate-plan', async (req, res) => {
   const { valid, errors, value } = validateGeneratePlanInput(req.body);
   if (!valid) {
     return res.status(400).json({ error: 'Invalid input.', details: errors });
@@ -73,7 +89,7 @@ app.post('/api/generate-plan', llmLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/extract-topics', llmLimiter, async (req, res) => {
+api.post('/extract-topics', async (req, res) => {
   const { valid, errors, value } = validateExtractInput(req.body);
   if (!valid) {
     return res.status(400).json({ error: 'Invalid input.', details: errors });
@@ -87,7 +103,21 @@ app.post('/api/extract-topics', llmLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/learn', llmLimiter, async (req, res) => {
+api.post('/expand-topics', async (req, res) => {
+  const { valid, errors, value } = validateExpandInput(req.body);
+  if (!valid) {
+    return res.status(400).json({ error: 'Invalid input.', details: errors });
+  }
+
+  try {
+    const result = await expandTopics(value.topics, value.level);
+    return res.json(result);
+  } catch (err) {
+    return sendLlmError(res, err, 'expand-topics');
+  }
+});
+
+api.post('/learn', async (req, res) => {
   const { valid, errors, value } = validateLearnInput(req.body);
   if (!valid) {
     return res.status(400).json({ error: 'Invalid input.', details: errors });
@@ -101,7 +131,7 @@ app.post('/api/learn', llmLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/revise', llmLimiter, async (req, res) => {
+api.post('/revise', async (req, res) => {
   const { valid, errors, value } = validateReviseInput(req.body);
   if (!valid) {
     return res.status(400).json({ error: 'Invalid input.', details: errors });
@@ -114,6 +144,22 @@ app.post('/api/revise', llmLimiter, async (req, res) => {
     return sendLlmError(res, err, 'revise');
   }
 });
+
+api.post('/grade', async (req, res) => {
+  const { valid, errors, value } = validateGradeInput(req.body);
+  if (!valid) {
+    return res.status(400).json({ error: 'Invalid input.', details: errors });
+  }
+
+  try {
+    const result = await gradeAnswer(value);
+    return res.json(result);
+  } catch (err) {
+    return sendLlmError(res, err, 'grade');
+  }
+});
+
+app.use('/api', api);
 
 // JSON body parse errors -> 400 instead of a stack trace.
 app.use((err, _req, res, _next) => {

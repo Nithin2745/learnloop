@@ -35,9 +35,10 @@ function pickDefaultLevel(explanations) {
 
 /**
  * One expandable topic explainer. `item` is generated upfront by App:
- * { topic, importance, explanations:[{ level, summary, detail, analogy,
- *   keyPoints, steps, visual }] }. Multi-depth topics get an Easy/Medium/Hard
- * switch; changing depth replays the reveal animation.
+ * { topic, importance, explanations:[{ level, summary, detail, prerequisites,
+ *   analogy, keyPoints, steps, workedExample, misconceptions, visual }] }.
+ * Multi-depth topics get an Easy/Medium/Hard switch; changing depth replays the
+ * reveal animation.
  */
 export default function ConceptCard({ item, open, onToggle }) {
   const reduce = useReducedMotion();
@@ -137,6 +138,22 @@ export default function ConceptCard({ item, open, onToggle }) {
                     </motion.p>
                   )}
 
+                  {ex.prerequisites?.length > 0 && (
+                    <motion.div variants={anim} className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Know first
+                      </span>
+                      {ex.prerequisites.map((p, i) => (
+                        <span
+                          key={i}
+                          className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600"
+                        >
+                          {p}
+                        </span>
+                      ))}
+                    </motion.div>
+                  )}
+
                   {ex.analogy && (
                     <motion.div
                       variants={anim}
@@ -190,6 +207,58 @@ export default function ConceptCard({ item, open, onToggle }) {
                         </li>
                       ))}
                     </motion.ol>
+                  )}
+
+                  {ex.workedExample && (
+                    <motion.div
+                      variants={anim}
+                      className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                        ✍️ Worked example
+                      </p>
+                      {ex.workedExample.problem && (
+                        <p className="mt-1.5 text-sm font-medium leading-relaxed text-slate-800">
+                          {ex.workedExample.problem}
+                        </p>
+                      )}
+                      {ex.workedExample.steps?.length > 0 && (
+                        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-relaxed text-slate-700 marker:text-emerald-500">
+                          {ex.workedExample.steps.map((s, i) => (
+                            <li key={i}>{s}</li>
+                          ))}
+                        </ol>
+                      )}
+                      {ex.workedExample.answer && (
+                        <p className="mt-2 text-sm leading-relaxed text-emerald-900">
+                          <span className="font-semibold">Answer: </span>
+                          {ex.workedExample.answer}
+                        </p>
+                      )}
+                    </motion.div>
+                  )}
+
+                  {ex.misconceptions?.length > 0 && (
+                    <motion.div variants={anim} className="space-y-2.5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                        ⚠️ Common mistakes
+                      </p>
+                      {ex.misconceptions.map((m, i) => (
+                        <div
+                          key={i}
+                          className="rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3"
+                        >
+                          <p className="text-sm leading-relaxed text-rose-900">
+                            <span className="font-semibold">Myth: </span>
+                            {m.myth}
+                          </p>
+                          <p className="mt-1 text-sm leading-relaxed text-slate-700">
+                            <span className="font-semibold text-emerald-700">Reality: </span>
+                            {m.reality}
+                          </p>
+                        </div>
+                      ))}
+                    </motion.div>
                   )}
                 </motion.div>
               </AnimatePresence>

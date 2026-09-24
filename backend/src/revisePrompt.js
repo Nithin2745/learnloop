@@ -36,9 +36,14 @@ Follow these rules exactly:
 2. "flashcards": 5-8 cards. "front" is a short prompt (a term, question, or
    cue); "back" is a concise answer (1-2 sentences). Cover the most testable
    points of the topic.
-3. "questions": 4-6 important exam-style questions. For each:
+3. "questions": 4-6 important exam-style questions that lean toward APPLICATION,
+   not recall. At least half must be application-level — "apply", "analyze",
+   "compare", "what happens if…", "given <scenario>…", "why does…", or
+   "how would you…" — that force the student to USE the concept, not just
+   restate a definition. Order them roughly easiest → hardest. For each:
    - "answer": a clear, COMPLETE explanation in plain language (3-6 sentences).
-     Explain the idea and the "why", not just a one-line definition.
+     Explain the idea and the "why" (and, for scenario questions, the reasoning
+     that leads to the result), not just a one-line definition.
    - "keyPoints": 0-4 short bullet takeaways that reinforce the answer (use []
      when extra bullets would not help).
    - "example": one short concrete example that makes it click, or "" if none
@@ -60,8 +65,9 @@ export function buildReviseMessages(topics) {
 ${list}
 
 Remember: respond with ONLY the JSON object described in the schema, one item
-per topic in order. Flashcards stay quick; question answers should be full,
-clear explanations with optional key points and an example.`;
+per topic in order. Flashcards stay quick; questions should lean toward applying
+the concept (scenarios, "why", "what happens if"), with full, clear answers plus
+optional key points and an example.`;
 
   return [
     { role: 'system', content: SYSTEM_PROMPT },

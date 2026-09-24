@@ -172,7 +172,10 @@ returned unparseable output.
 1. **Setup** — you enter topics (typed or picked from a PDF) + exam date +
    hours/day. A syllabus PDF is parsed in-browser and structured via
    `/api/extract-topics`.
-2. **Plan** is generated on confirm. **Learn** is generated up front the first
+2. **Plan** is generated on confirm — the AI only *rates* each topic (difficulty
+   + weight) and writes its practice questions; the day-by-day calendar is then
+   built **server-side** in code, so it stays fast even for a distant exam.
+   **Learn** is generated up front the first
    time you open it (one batch for all topics). **Revise** is generated lazily
    per topic as you open it. Results are cached in session state, so switching
    modes is instant and doesn't re-hit the API.

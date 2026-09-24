@@ -18,9 +18,18 @@ const SCHEMA_DESCRIPTION = `{
           "level": "easy" | "medium" | "hard",
           "summary": string,                     // 3-5 plain sentences
           "detail": string,                      // 1-2 short paragraphs, going deeper
+          "prerequisites": [ string ],           // 0-4 concepts to understand first ([] if none)
           "analogy": string,                     // one relatable real-world analogy
           "keyPoints": [ string ],               // 4-6 crisp takeaways
           "steps": [ { "title": string, "detail": string } ],  // 3-6 progressive
+          "workedExample": {                     // ONE fully worked example ({} if truly N/A)
+            "problem": string,                   // a concrete question/task
+            "steps": [ string ],                 // the solution worked out, step by step
+            "answer": string                     // the final result/answer
+          },
+          "misconceptions": [                    // 2-3 common mistakes to avoid
+            { "myth": string, "reality": string }
+          ],
           "visual": {                            // small concept diagram the UI draws
             "kind": "flow" | "hierarchy" | "compare",
             "caption": string,
@@ -54,16 +63,26 @@ Follow these rules exactly:
 6. "keyPoints": 4-6 short, high-signal takeaways.
 7. "steps": 3-6 ordered steps that build understanding progressively (a short
    "title" plus a one-sentence "detail"). These drive a step-by-step animation.
-8. "visual": a SMALL concept diagram expressed as structured data (the app draws
-   it, so give data — never markup):
-   - "kind": "flow" (a process/sequence), "hierarchy" (parts/sub-parts), or
-     "compare" (2-4 things contrasted).
-   - "nodes": 3-6 items, each a stable "id", a short "label" (<= 4 words), and a
-     brief "note". "edges" connect node ids ("from" -> "to") with an optional
-     "label". For "compare", nodes are the things compared; edges may be [].
-   Make it faithful to the topic at this level.
-9. Be accurate. Do not fabricate specifics you are unsure of; stay general
-   rather than inventing false detail.
+8. "prerequisites": 0-4 concepts a student should understand FIRST to follow
+   this explanation. Use [] if the topic is genuinely self-contained at this
+   level. Keep each to a short concept name, hardest levels may list more.
+9. "workedExample": ONE concrete, fully worked example that applies the concept
+   — a real "problem", the "steps" that solve it worked out one by one, and the
+   final "answer". Make it match the level (easy = simple, hard = involved).
+   Return {} ONLY if a worked example truly makes no sense for the topic.
+10. "misconceptions": 2-3 common mistakes students make, each as a "myth" (the
+    wrong belief, stated plainly) and its "reality" (the correction). These are
+    high-value — target the errors that actually cost marks.
+11. "visual": a SMALL concept diagram expressed as structured data (the app draws
+    it, so give data — never markup):
+    - "kind": "flow" (a process/sequence), "hierarchy" (parts/sub-parts), or
+      "compare" (2-4 things contrasted).
+    - "nodes": 3-6 items, each a stable "id", a short "label" (<= 4 words), and a
+      brief "note". "edges" connect node ids ("from" -> "to") with an optional
+      "label". For "compare", nodes are the things compared; edges may be [].
+    Make it faithful to the topic at this level.
+12. Be accurate. Do not fabricate specifics you are unsure of; stay general
+    rather than inventing false detail.
 
 OUTPUT FORMAT — CRITICAL:
 Return ONLY a single valid JSON object matching this schema. No markdown code
@@ -91,7 +110,8 @@ ${list}
 
 Remember: respond with ONLY the JSON object described in the schema, one item
 per topic in order. Provide an explanation entry for EACH requested level, each
-with a clear analogy, progressive steps, and a small structured "visual".`;
+with a clear analogy, progressive steps, a worked example, common
+misconceptions, and a small structured "visual".`;
 
   return [
     { role: 'system', content: SYSTEM_PROMPT },

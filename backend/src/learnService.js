@@ -59,11 +59,36 @@ function normalizeVisual(v) {
   return { kind, caption: String(v?.caption ?? '').trim(), nodes, edges };
 }
 
+function normalizeWorkedExample(w) {
+  const problem = String(w?.problem ?? '').trim();
+  const answer = String(w?.answer ?? '').trim();
+  const steps = Array.isArray(w?.steps)
+    ? w.steps.map((s) => String(s ?? '').trim()).filter(Boolean)
+    : [];
+  // Only surface an example that actually carries content.
+  if (!problem && !answer && !steps.length) return null;
+  return { problem, steps, answer };
+}
+
+function normalizeMisconceptions(list) {
+  return Array.isArray(list)
+    ? list
+        .map((m) => ({
+          myth: String(m?.myth ?? '').trim(),
+          reality: String(m?.reality ?? '').trim(),
+        }))
+        .filter((m) => m.myth && m.reality)
+    : [];
+}
+
 function normalizeExplanation(ex) {
   return {
     level: validLevel.has(ex?.level) ? ex.level : 'medium',
     summary: String(ex?.summary ?? '').trim(),
     detail: String(ex?.detail ?? '').trim(),
+    prerequisites: Array.isArray(ex?.prerequisites)
+      ? ex.prerequisites.map((p) => String(p ?? '').trim()).filter(Boolean)
+      : [],
     analogy: String(ex?.analogy ?? '').trim(),
     keyPoints: Array.isArray(ex?.keyPoints)
       ? ex.keyPoints.map((k) => String(k ?? '').trim()).filter(Boolean)
@@ -74,6 +99,8 @@ function normalizeExplanation(ex) {
           detail: String(s?.detail ?? '').trim(),
         }))
       : [],
+    workedExample: normalizeWorkedExample(ex?.workedExample),
+    misconceptions: normalizeMisconceptions(ex?.misconceptions),
     visual: normalizeVisual(ex?.visual),
   };
 }
