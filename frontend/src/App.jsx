@@ -6,7 +6,9 @@ import Results from './components/Results.jsx';
 import LearnMode from './components/LearnMode.jsx';
 import RevisionMode from './components/RevisionMode.jsx';
 import Login from './components/Login.jsx';
+import HistoryView from './components/HistoryView.jsx';
 import { useAuth } from './auth/AuthProvider.jsx';
+import { useHistory } from './hooks/useHistory.js';
 import { generatePlan, generateLearning, generateRevision } from './api.js';
 import { dedupeByBase } from './lib/topics.js';
 
@@ -59,6 +61,10 @@ export default function App() {
 
   const [setup, setSetup] = useState(null); // { topics: string[], examDate, hoursPerDay }
   const [mode, setMode] = useState('plan'); // 'plan' | 'learn' | 'revise'
+  const [view, setView] = useState('study'); // 'study' | 'history'
+
+  // Study history: local-first cache backed by Supabase (source of truth).
+  const { sessions, loading: historyLoading, saveSession, deleteSession } = useHistory(user?.id);
 
   const [plan, setPlan] = useState(null);
   const [planStatus, setPlanStatus] = useState('idle'); // idle | loading | ready | error
@@ -83,9 +89,11 @@ export default function App() {
       });
       setPlan(result);
       setPlanStatus('ready');
+      return result;
     } catch (err) {
       setPlanError(err.message || 'Something went wrong. Please try again.');
       setPlanStatus('error');
+      return null;
     }
   }, []);
 
@@ -118,11 +126,22 @@ export default function App() {
     reviseReq.current = new Set();
   }
 
-  function handleConfirm(cfg) {
+  async function handleConfirm(cfg) {
+    setView('study');
     setSetup(cfg);
     setMode('plan');
     resetSessionCaches();
-    runPlan(cfg);
+    const result = await runPlan(cfg);
+    // Save a history entry only for a freshly generated plan (retries reuse runPlan
+    // directly and must not create a second row).
+    if (result) {
+      saveSession({
+        topics: cfg.topics,
+        examDate: cfg.examDate,
+        hoursPerDay: cfg.hoursPerDay,
+        plan: result,
+      });
+    }
   }
 
   function handleNewSetup() {
@@ -131,6 +150,22 @@ export default function App() {
     setPlanStatus('idle');
     setPlanError('');
     resetSessionCaches();
+    setView('study');
+  }
+
+  // Reload a saved session's plan back into the app (from the History view).
+  function openSession(session) {
+    resetSessionCaches();
+    setSetup({
+      topics: Array.isArray(session.topics) ? session.topics : [],
+      examDate: session.exam_date || '',
+      hoursPerDay: session.hours_per_day ?? null,
+    });
+    setPlan(session.plan);
+    setPlanStatus('ready');
+    setPlanError('');
+    setMode('plan');
+    setView('study');
   }
 
   const generateRevise = useCallback(
@@ -166,7 +201,7 @@ export default function App() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            {setup && <ModeNav mode={mode} onChange={setMode} />}
+            {setup && view === 'study' && <ModeNav mode={mode} onChange={setMode} />}
             {setup && (
               <button
                 type="button"
@@ -176,6 +211,17 @@ export default function App() {
                 New setup
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setView((v) => (v === 'history' ? 'study' : 'history'))}
+              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                view === 'history'
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              History
+            </button>
             <button
               type="button"
               onClick={signOut}
@@ -188,29 +234,46 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
-        {!setup && <SetupScreen onConfirm={handleConfirm} error={planError} />}
-
-        {setup && mode === 'plan' && (
-          <>
-            {(planStatus === 'idle' || planStatus === 'loading') && <LoadingState />}
-            {planStatus === 'error' && (
-              <PlanError message={planError} onRetry={() => runPlan(setup)} />
-            )}
-            {planStatus === 'ready' && plan && <Results plan={plan} onReset={handleNewSetup} />}
-          </>
-        )}
-
-        {setup && mode === 'learn' && (
-          <LearnMode
-            state={learn.state}
-            items={learn.items}
-            error={learn.error}
-            onRetry={() => runLearn(setup.topics)}
+        {view === 'history' ? (
+          <HistoryView
+            sessions={sessions}
+            loading={historyLoading}
+            onOpen={openSession}
+            onDelete={deleteSession}
           />
-        )}
+        ) : (
+          <>
+            {!setup && <SetupScreen onConfirm={handleConfirm} error={planError} />}
 
-        {setup && mode === 'revise' && (
-          <RevisionMode topics={reviseTopics} cache={reviseCache} onGenerate={generateRevise} />
+            {setup && mode === 'plan' && (
+              <>
+                {(planStatus === 'idle' || planStatus === 'loading') && <LoadingState />}
+                {planStatus === 'error' && (
+                  <PlanError message={planError} onRetry={() => runPlan(setup)} />
+                )}
+                {planStatus === 'ready' && plan && (
+                  <Results plan={plan} onReset={handleNewSetup} />
+                )}
+              </>
+            )}
+
+            {setup && mode === 'learn' && (
+              <LearnMode
+                state={learn.state}
+                items={learn.items}
+                error={learn.error}
+                onRetry={() => runLearn(setup.topics)}
+              />
+            )}
+
+            {setup && mode === 'revise' && (
+              <RevisionMode
+                topics={reviseTopics}
+                cache={reviseCache}
+                onGenerate={generateRevise}
+              />
+            )}
+          </>
         )}
       </main>
     </div>
