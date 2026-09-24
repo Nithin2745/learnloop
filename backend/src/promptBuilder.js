@@ -16,7 +16,8 @@ const SCHEMA_DESCRIPTION = `{
         {
           "name": string,
           "difficulty": "easy" | "medium" | "hard",
-          "estimatedHours": number            // hours to spend on this topic that day
+          "estimatedHours": number,           // hours to spend on this topic that day
+          "isReview": boolean                 // true when this is a spaced-repetition revisit
         }
       ],
       "isBufferDay": boolean                  // true for light revision/buffer days
@@ -25,7 +26,9 @@ const SCHEMA_DESCRIPTION = `{
   "practiceQuestions": [
     {
       "topic": string,
-      "questions": [string, string, string]   // 3-5 questions, no answers
+      "questions": [                          // 3-5 items per topic
+        { "question": string, "answer": string }
+      ]
     }
   ]
 }`;
@@ -42,15 +45,22 @@ Follow these rules exactly:
    weight. If the student gave a hint, honour it; otherwise judge it yourself.
 3. Distribute topics across the days remaining before the exam, respecting the
    student's available study hours per day. Harder / heavier topics get more
-   total time and may be split across multiple days. Do not exceed the daily
-   hour budget. It is fine for the sum of estimatedHours on a day to be at or
-   below the budget.
-4. Reserve the last 1-2 days before the exam as light revision / buffer days:
+   total time. Do not exceed the daily hour budget; the sum of estimatedHours
+   on a day may be at or below the budget.
+4. Use SPACED REPETITION. Schedule harder and heavier topics for MULTIPLE
+   sessions on different days, with increasing gaps between revisits (e.g. a
+   hard topic studied on Day 1 might be reviewed on Day 3, then Day 7).
+   - The FIRST time a topic appears, set "isReview": false.
+   - Every later revisit of that same topic sets "isReview": true and should be
+     shorter than the first pass.
+   - Easy topics may appear only once ("isReview": false).
+5. Reserve the last 1-2 days before the exam as light revision / buffer days:
    mark them "isBufferDay": true, keep their load light, and use them for
    review rather than new material.
-5. Produce 3-5 practice questions per topic — a mix of conceptual and applied.
-   Questions only, never answers.
-6. Every date must fall on or before the exam date and be a real calendar date.
+6. Produce 3-5 practice questions per topic — a mix of conceptual and applied.
+   Each question includes a concise "answer" (1-3 sentences: the answer or a
+   short explanation / worked idea, not a full essay).
+7. Every date must fall on or before the exam date and be a real calendar date.
    Label days sequentially ("Day 1", "Day 2", ...).
 
 OUTPUT FORMAT — CRITICAL:
@@ -74,20 +84,11 @@ Topics (free text):
 ${topics}
 """
 
-Remember: respond with ONLY the JSON object described in the schema.`;
+Remember: respond with ONLY the JSON object described in the schema. Use
+spaced repetition for harder topics and give every practice question an answer.`;
 
   return [
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: userPrompt },
   ];
-}
-
-/** A nudge appended on the retry attempt when the first parse fails. */
-export function retryNudge() {
-  return {
-    role: 'user',
-    content:
-      'Your previous response could not be parsed as JSON. Respond again with ' +
-      'ONLY the JSON object — no markdown fences, no explanation.',
-  };
 }

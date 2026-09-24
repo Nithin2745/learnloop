@@ -1,13 +1,13 @@
 const BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 /**
- * Calls POST /api/generate-plan and returns the plan JSON.
+ * POST JSON to an API route and return the parsed body.
  * Throws an Error with a human-readable message on any non-2xx response.
  */
-export async function generatePlan(payload) {
+async function postJson(path, payload) {
   let res;
   try {
-    res = await fetch(`${BASE}/api/generate-plan`, {
+    res = await fetch(`${BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -27,4 +27,24 @@ export async function generatePlan(payload) {
   }
 
   return data;
+}
+
+/** POST /api/generate-plan → plan JSON. */
+export function generatePlan(payload) {
+  return postJson('/api/generate-plan', payload);
+}
+
+/** POST /api/extract-topics → { subjects: [...] }. */
+export function extractTopics(text) {
+  return postJson('/api/extract-topics', { text });
+}
+
+/** POST /api/learn → { items: [...] }. */
+export function generateLearning(topics) {
+  return postJson('/api/learn', { topics });
+}
+
+/** POST /api/revise → { items: [...] }. */
+export function generateRevision(topics) {
+  return postJson('/api/revise', { topics });
 }

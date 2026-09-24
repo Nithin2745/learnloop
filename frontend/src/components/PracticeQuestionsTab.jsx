@@ -1,65 +1,74 @@
 import { useState } from 'react';
+import Accordion from './Accordion.jsx';
+import { gfgSearchUrl } from '../lib/resources.js';
+
+function QuestionItem({ index, item }) {
+  const [show, setShow] = useState(false);
+  // Tolerate either a bare string or a { question, answer } object.
+  const question = typeof item === 'string' ? item : item?.question ?? '';
+  const answer = typeof item === 'string' ? '' : item?.answer ?? '';
+
+  return (
+    <li className="rounded-xl bg-slate-50/70 p-3 text-sm">
+      <div className="flex gap-2">
+        <span className="font-medium text-slate-400">{index + 1}.</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-slate-700">{question}</p>
+          {answer && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShow((s) => !s)}
+                aria-expanded={show}
+                className="mt-1.5 text-xs font-medium text-indigo-600 transition hover:text-indigo-700"
+              >
+                {show ? 'Hide answer' : 'Show answer'}
+              </button>
+              {show && (
+                <p className="mt-1.5 rounded-lg bg-white px-3 py-2 text-slate-600 ring-1 ring-slate-100">
+                  {answer}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
 
 export default function PracticeQuestionsTab({ groups }) {
-  const [openIndex, setOpenIndex] = useState(0);
-
   if (!groups?.length) {
     return <p className="text-slate-500">No practice questions were generated.</p>;
   }
 
-  return (
-    <div className="space-y-3">
-      {groups.map((group, i) => {
-        const isOpen = openIndex === i;
-        const panelId = `panel-${i}`;
-        return (
-          <div
-            key={`${group.topic}-${i}`}
-            className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+  const items = groups.map((group, i) => {
+    const count = group.questions?.length ?? 0;
+    return {
+      id: `${group.topic}-${i}`,
+      title: group.topic,
+      meta: `${count} question${count === 1 ? '' : 's'}`,
+      render: () => (
+        <>
+          <a
+            href={gfgSearchUrl(group.topic)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100"
           >
-            <button
-              onClick={() => setOpenIndex(isOpen ? -1 : i)}
-              aria-expanded={isOpen}
-              aria-controls={panelId}
-              className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition hover:bg-slate-50"
-            >
-              <span className="font-medium text-slate-800">{group.topic}</span>
-              <span className="flex items-center gap-3">
-                <span className="text-xs text-slate-400">
-                  {group.questions.length} question
-                  {group.questions.length === 1 ? '' : 's'}
-                </span>
-                <svg
-                  className={`h-4 w-4 text-slate-400 transition-transform ${
-                    isOpen ? 'rotate-180' : ''
-                  }`}
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </span>
-            </button>
-            {isOpen && (
-              <ol
-                id={panelId}
-                className="list-decimal space-y-2 border-t border-slate-100 px-5 py-4 pl-9 text-sm text-slate-600"
-              >
-                {group.questions.map((q, qi) => (
-                  <li key={qi} className="pl-1">
-                    {q}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+            <span aria-hidden="true">📚</span>
+            Review “{group.topic}” on GeeksforGeeks
+            <span aria-hidden="true">↗</span>
+          </a>
+          <ol className="space-y-3">
+            {(group.questions || []).map((q, qi) => (
+              <QuestionItem key={qi} index={qi} item={q} />
+            ))}
+          </ol>
+        </>
+      ),
+    };
+  });
+
+  return <Accordion items={items} mode="single" defaultOpen={0} />;
 }

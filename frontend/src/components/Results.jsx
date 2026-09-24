@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import ScheduleTab from './ScheduleTab.jsx';
 import PracticeQuestionsTab from './PracticeQuestionsTab.jsx';
+import { useProgress } from '../hooks/useProgress.js';
+import { downloadIcs } from '../lib/ics.js';
 
 export default function Results({ plan, onReset }) {
   const [tab, setTab] = useState('schedule');
+  const progress = useProgress(plan);
 
   const tabs = [
     { id: 'schedule', label: 'Schedule' },
@@ -14,22 +17,27 @@ export default function Results({ plan, onReset }) {
     <div>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-slate-900">
-            Your study plan
-          </h2>
+          <h2 className="text-xl font-semibold text-slate-900">Your study plan</h2>
           <p className="mt-0.5 text-sm text-slate-500">
             {plan.totalDays} day{plan.totalDays === 1 ? '' : 's'} ·{' '}
             {plan.practiceQuestions.length} topic
-            {plan.practiceQuestions.length === 1 ? '' : 's'} with practice
-            questions
+            {plan.practiceQuestions.length === 1 ? '' : 's'} with practice questions
           </p>
         </div>
-        <button
-          onClick={onReset}
-          className="self-start rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 sm:self-auto"
-        >
-          New plan
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => downloadIcs(plan)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-600"
+          >
+            <span aria-hidden="true">📅</span> Add to calendar
+          </button>
+          <button
+            onClick={onReset}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            New plan
+          </button>
+        </div>
       </div>
 
       <div
@@ -55,7 +63,7 @@ export default function Results({ plan, onReset }) {
       </div>
 
       {tab === 'schedule' ? (
-        <ScheduleTab schedule={plan.schedule} />
+        <ScheduleTab schedule={plan.schedule} progress={progress} />
       ) : (
         <PracticeQuestionsTab groups={plan.practiceQuestions} />
       )}

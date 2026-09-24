@@ -78,3 +78,61 @@ export function validateGeneratePlanInput(body) {
     value: { topics, examDate, hoursPerDay, today, daysRemaining },
   };
 }
+
+const MAX_EXTRACT_TEXT = 60_000;
+const MAX_TOPICS = 25;
+const MAX_TOPIC_LEN = 200;
+
+/**
+ * Validate POST /api/extract-topics: { text } is a non-empty string within a
+ * hard length cap (the client sends the syllabus in page-boundary chunks).
+ */
+export function validateExtractInput(body) {
+  const errors = [];
+  const b = body || {};
+  const text = typeof b.text === 'string' ? b.text.trim() : '';
+  if (!text) {
+    errors.push('text is required and must be a non-empty string.');
+  } else if (text.length > MAX_EXTRACT_TEXT) {
+    errors.push(
+      `text must be at most ${MAX_EXTRACT_TEXT} characters (send it in smaller chunks).`
+    );
+  }
+  if (errors.length > 0) return { valid: false, errors, value: null };
+  return { valid: true, errors: [], value: { text } };
+}
+
+/**
+ * Shared for POST /api/learn and /api/revise: topics is an array of 1-25
+ * non-empty strings, each within a per-topic length cap. Trims and drops
+ * blanks before the count/length checks.
+ */
+function validateTopicsList(body) {
+  const errors = [];
+  const b = body || {};
+  let topics = [];
+  if (!Array.isArray(b.topics)) {
+    errors.push('topics is required and must be an array of strings.');
+  } else {
+    topics = b.topics
+      .map((t) => (typeof t === 'string' ? t.trim() : ''))
+      .filter(Boolean);
+    if (topics.length === 0) {
+      errors.push('topics must contain at least one non-empty string.');
+    } else if (topics.length > MAX_TOPICS) {
+      errors.push(`topics must contain at most ${MAX_TOPICS} items.`);
+    } else if (topics.some((t) => t.length > MAX_TOPIC_LEN)) {
+      errors.push(`each topic must be at most ${MAX_TOPIC_LEN} characters.`);
+    }
+  }
+  if (errors.length > 0) return { valid: false, errors, value: null };
+  return { valid: true, errors: [], value: { topics } };
+}
+
+export function validateLearnInput(body) {
+  return validateTopicsList(body);
+}
+
+export function validateReviseInput(body) {
+  return validateTopicsList(body);
+}
