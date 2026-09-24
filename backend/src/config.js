@@ -28,7 +28,10 @@ const PROVIDERS = {
   nvidia: {
     apiKeyEnv: 'NVIDIA_API_KEY',
     baseURL: 'https://integrate.api.nvidia.com/v1',
-    model: 'mistralai/mistral-nemotron',
+    // mistralai/mistral-nemotron NIM is intermittently 500/unreachable (verified
+    // 2026-09-24); this lightning model returns 200 reliably with json_object.
+    // Override per-deploy with NVIDIA_MODEL=... if NVIDIA rotates its catalog.
+    model: 'nvidia/nemotron-3.5-lightning-30b-a3b',
   },
   openrouter: {
     apiKeyEnv: 'OPENROUTER_API_KEY',
