@@ -7,10 +7,13 @@ import LearnMode from './components/LearnMode.jsx';
 import RevisionMode from './components/RevisionMode.jsx';
 import Login from './components/Login.jsx';
 import HistoryView from './components/HistoryView.jsx';
+import DueToday from './components/DueToday.jsx';
 import { useAuth } from './auth/AuthProvider.jsx';
 import { useHistory } from './hooks/useHistory.js';
+import { useReviews } from './hooks/useReviews.js';
 import { generatePlan, generateLearning, generateRevision } from './api.js';
 import { dedupeByBase } from './lib/topics.js';
+import { itemKeyForTopic } from './lib/sm2.js';
 
 /**
  * Lazily generate one topic's content into a topic-keyed cache
@@ -65,6 +68,9 @@ export default function App() {
 
   // Study history: local-first cache backed by Supabase (source of truth).
   const { sessions, loading: historyLoading, saveSession, deleteSession } = useHistory(user?.id);
+
+  // Spaced repetition: graded answers schedule topic reviews (local-first, SM-2).
+  const { dueToday, recordReview } = useReviews(user?.id);
 
   const [plan, setPlan] = useState(null);
   const [planStatus, setPlanStatus] = useState('idle'); // idle | loading | ready | error
@@ -173,6 +179,28 @@ export default function App() {
     [],
   );
 
+  // A graded answer (Plan practice or Revise Q&A) schedules that topic for
+  // spaced review: grade score -> SM-2 quality -> review_state upsert.
+  const handleGraded = useCallback(
+    ({ topic, score }) => {
+      if (!topic) return;
+      recordReview({ itemKey: itemKeyForTopic(topic), label: topic, score });
+    },
+    [recordReview],
+  );
+
+  // Jump straight into revising one topic (from the "Due today" queue).
+  function reviseTopic(topic) {
+    if (!topic) return;
+    resetSessionCaches();
+    setSetup({ topics: [topic], examDate: '', hoursPerDay: null });
+    setPlan(null);
+    setPlanStatus('idle');
+    setPlanError('');
+    setMode('revise');
+    setView('study');
+  }
+
   const reviseTopics = setup ? dedupeByBase(setup.topics) : [];
 
   // Auth gate: wait for the stored session to load, then require sign-in.
@@ -214,13 +242,18 @@ export default function App() {
             <button
               type="button"
               onClick={() => setView((v) => (v === 'history' ? 'study' : 'history'))}
-              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+              className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
                 view === 'history'
                   ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
                   : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
               }`}
             >
               History
+              {dueToday.length > 0 && (
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-500 px-1 text-[10px] font-bold text-white">
+                  {dueToday.length}
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -235,24 +268,45 @@ export default function App() {
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
         {view === 'history' ? (
-          <HistoryView
-            sessions={sessions}
-            loading={historyLoading}
-            onOpen={openSession}
-            onDelete={deleteSession}
-          />
+          <>
+            <DueToday items={dueToday} onRevise={reviseTopic} />
+            <HistoryView
+              sessions={sessions}
+              loading={historyLoading}
+              onOpen={openSession}
+              onDelete={deleteSession}
+            />
+          </>
         ) : (
           <>
-            {!setup && <SetupScreen onConfirm={handleConfirm} error={planError} />}
+            {!setup && (
+              <>
+                <DueToday items={dueToday} onRevise={reviseTopic} />
+                <SetupScreen onConfirm={handleConfirm} error={planError} />
+              </>
+            )}
 
             {setup && mode === 'plan' && (
               <>
-                {(planStatus === 'idle' || planStatus === 'loading') && <LoadingState />}
+                {planStatus === 'loading' && <LoadingState />}
+                {planStatus === 'idle' && !plan && (
+                  <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600">
+                    No study plan for these topics yet.{' '}
+                    <button
+                      type="button"
+                      onClick={() => runPlan(setup)}
+                      className="font-medium text-indigo-600 underline-offset-2 hover:underline"
+                    >
+                      Build a plan
+                    </button>{' '}
+                    — or switch to Revise above to practice them now.
+                  </div>
+                )}
                 {planStatus === 'error' && (
                   <PlanError message={planError} onRetry={() => runPlan(setup)} />
                 )}
                 {planStatus === 'ready' && plan && (
-                  <Results plan={plan} onReset={handleNewSetup} />
+                  <Results plan={plan} onReset={handleNewSetup} onGraded={handleGraded} />
                 )}
               </>
             )}
@@ -271,6 +325,7 @@ export default function App() {
                 topics={reviseTopics}
                 cache={reviseCache}
                 onGenerate={generateRevise}
+                onGraded={handleGraded}
               />
             )}
           </>

@@ -2,7 +2,7 @@ import Accordion from './Accordion.jsx';
 import AnswerGrader from './AnswerGrader.jsx';
 import { gfgSearchUrl } from '../lib/resources.js';
 
-function QuestionItem({ index, item, topic }) {
+function QuestionItem({ index, item, topic, onGraded }) {
   // Tolerate either a bare string or a { question, answer } object.
   const question = typeof item === 'string' ? item : item?.question ?? '';
   const answer = typeof item === 'string' ? '' : item?.answer ?? '';
@@ -15,15 +15,21 @@ function QuestionItem({ index, item, topic }) {
         <div className="min-w-0 flex-1">
           <p className="text-slate-700">{question}</p>
           {/* Active recall: type an answer and get it graded (the stored answer,
-              when present, is the reference the grader marks against). */}
-          <AnswerGrader topic={topic} question={question} referenceAnswer={answer} />
+              when present, is the reference the grader marks against). A graded
+              answer schedules the topic for spaced review via onGraded. */}
+          <AnswerGrader
+            topic={topic}
+            question={question}
+            referenceAnswer={answer}
+            onGraded={onGraded ? (r) => onGraded({ topic, score: r.score }) : undefined}
+          />
         </div>
       </div>
     </li>
   );
 }
 
-export default function PracticeQuestionsTab({ groups }) {
+export default function PracticeQuestionsTab({ groups, onGraded }) {
   if (!groups?.length) {
     return <p className="text-slate-500">No practice questions were generated.</p>;
   }
@@ -48,7 +54,13 @@ export default function PracticeQuestionsTab({ groups }) {
           </a>
           <ol className="space-y-3">
             {(group.questions || []).map((q, qi) => (
-              <QuestionItem key={qi} index={qi} item={q} topic={group.topic} />
+              <QuestionItem
+                key={qi}
+                index={qi}
+                item={q}
+                topic={group.topic}
+                onGraded={onGraded}
+              />
             ))}
           </ol>
         </>

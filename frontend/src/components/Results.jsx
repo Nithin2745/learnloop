@@ -4,7 +4,7 @@ import PracticeQuestionsTab from './PracticeQuestionsTab.jsx';
 import { useProgress } from '../hooks/useProgress.js';
 import { downloadIcs } from '../lib/ics.js';
 
-export default function Results({ plan, onReset }) {
+export default function Results({ plan, onReset, onGraded }) {
   const [tab, setTab] = useState('schedule');
   const progress = useProgress(plan);
 
@@ -65,7 +65,7 @@ export default function Results({ plan, onReset }) {
       {tab === 'schedule' ? (
         <ScheduleTab schedule={plan.schedule} progress={progress} />
       ) : (
-        <PracticeQuestionsTab groups={plan.practiceQuestions} />
+        <PracticeQuestionsTab groups={plan.practiceQuestions} onGraded={onGraded} />
       )}
     </div>
   );

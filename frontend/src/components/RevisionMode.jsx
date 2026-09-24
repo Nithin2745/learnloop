@@ -10,7 +10,7 @@ import { gfgSearchUrl } from '../lib/resources.js';
  * (lazily, via onGenerate) and cached by App.
  * `cache` maps topic -> { state:'loading'|'ready'|'error', data, error }.
  */
-export default function RevisionMode({ topics, cache, onGenerate }) {
+export default function RevisionMode({ topics, cache, onGenerate, onGraded }) {
   const [selected, setSelected] = useState(topics[0] ?? null);
 
   // Generate the selected topic's content the first time it is shown.
@@ -30,7 +30,12 @@ export default function RevisionMode({ topics, cache, onGenerate }) {
     title: q.question,
     render: () => (
       <div className="space-y-3">
-        <AnswerGrader topic={selected} question={q.question} referenceAnswer={q.answer} />
+        <AnswerGrader
+          topic={selected}
+          question={q.question}
+          referenceAnswer={q.answer}
+          onGraded={onGraded ? (r) => onGraded({ topic: selected, score: r.score }) : undefined}
+        />
         <details className="rounded-lg border border-slate-200 bg-slate-50">
           <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-500 transition hover:text-slate-700">
             Show model answer
