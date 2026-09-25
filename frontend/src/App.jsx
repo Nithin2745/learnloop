@@ -14,6 +14,7 @@ import { useReviews } from './hooks/useReviews.js';
 import { generatePlan, generateLearning, generateRevision, generatePracticeQuestions } from './api.js';
 import { dedupeByBase } from './lib/topics.js';
 import { itemKeyForTopic } from './lib/sm2.js';
+import { readNav, writeNav, clearNav } from './lib/navStore.js';
 
 /**
  * Lazily generate one topic's content into a topic-keyed cache
@@ -102,9 +103,24 @@ export default function App() {
   // generated Learn/Revise can be written back onto it. reviseSaved mirrors the
   // persisted { [topic]: data } map so each new topic merges on top of the rest.
   // practiceSaved mirrors { [topic]: { topic, questions } } for the same reason.
-  const currentSessionId = useRef(null);
+  // The saved-history row id the current session belongs to. Kept as BOTH state
+  // and a ref: the state re-fires the nav-persist effect when it changes (e.g.
+  // after handleConfirm saves a new plan), while the ref gives the async
+  // callbacks below a fresh, stale-closure-proof read. commitSessionId sets both.
+  const [sessionId, setSessionId] = useState(null);
+  const sessionIdRef = useRef(null);
+  const commitSessionId = useCallback((id) => {
+    sessionIdRef.current = id;
+    setSessionId(id);
+  }, []);
   const reviseSaved = useRef({});
   const practiceSaved = useRef({});
+
+  // Reload navigation (see ./lib/navStore.js): snapshot the persisted pointer at
+  // first render so a StrictMode double-mount / early persist can't clobber it,
+  // and gate the persist effect until the one-time restore has run.
+  const savedNav = useRef(readNav());
+  const didRestore = useRef(false);
 
   const runPlan = useCallback(async (cfg) => {
     setPlanStatus('loading');
@@ -137,8 +153,8 @@ export default function App() {
       setLearn({ state: 'ready', items: ready, error: '' });
       // Persist so reopening this session from History restores Learn instead of
       // regenerating (best-effort; the optimistic cache already covers this device).
-      if (currentSessionId.current && ready.length) {
-        updateSession(currentSessionId.current, { learn: ready });
+      if (sessionIdRef.current && ready.length) {
+        updateSession(sessionIdRef.current, { learn: ready });
       }
     } catch (err) {
       if (learnToken.current !== token) return;
@@ -155,17 +171,17 @@ export default function App() {
     if (setup && mode === 'learn' && learn.state === 'idle') runLearn(setup.topics);
   }, [setup, mode, learn.state, runLearn]);
 
-  function resetSessionCaches() {
+  const resetSessionCaches = useCallback(() => {
     learnToken.current += 1; // invalidate any in-flight Learn batch
     setLearn({ state: 'idle', items: [], error: '' });
     setReviseCache({});
     reviseReq.current = new Set();
     setPracticeCache({});
     practiceReq.current = new Set();
-    currentSessionId.current = null; // callers that open or save a row set this after
+    commitSessionId(null); // callers that open or save a row set this after
     reviseSaved.current = {};
     practiceSaved.current = {};
-  }
+  }, [commitSessionId]);
 
   async function handleConfirm(cfg) {
     setView('study');
@@ -182,7 +198,7 @@ export default function App() {
         hoursPerDay: cfg.hoursPerDay,
         plan: result,
       });
-      currentSessionId.current = row?.id ?? null; // Learn/Revise write back onto this row
+      commitSessionId(row?.id ?? null); // Learn/Revise write back onto this row
     }
   }
 
@@ -196,7 +212,7 @@ export default function App() {
   }
 
   // Reload a saved session's plan back into the app (from the History view).
-  function openSession(session) {
+  const openSession = useCallback((session) => {
     resetSessionCaches();
     setSetup({
       topics: Array.isArray(session.topics) ? session.topics : [],
@@ -208,7 +224,7 @@ export default function App() {
     setPlanError('');
     setMode('plan');
     setView('study');
-    currentSessionId.current = session.id ?? null;
+    commitSessionId(session.id ?? null);
 
     // Restore previously generated Learn/Revise so reopening doesn't regenerate
     // (and re-spend LLM quota). Missing/empty => stay idle and generate on demand.
@@ -246,16 +262,16 @@ export default function App() {
     if (Object.keys(restoredPractice).length) {
       setPracticeCache(restoredPractice);
     }
-  }
+  }, [resetSessionCaches, commitSessionId]);
 
   const generateRevise = useCallback(
     async (topic) => {
       const data = await runGenerate(reviseReq, setReviseCache, generateRevision, topic);
       // Persist the newly generated topic onto the open history row (merged with any
       // already-saved topics) so it restores on reopen instead of regenerating.
-      if (data && currentSessionId.current) {
+      if (data && sessionIdRef.current) {
         reviseSaved.current = { ...reviseSaved.current, [topic]: data };
-        updateSession(currentSessionId.current, { revise: reviseSaved.current });
+        updateSession(sessionIdRef.current, { revise: reviseSaved.current });
       }
     },
     [updateSession],
@@ -267,16 +283,63 @@ export default function App() {
       // Persist onto the open history row's plan JSON so reopening restores the
       // questions instead of re-spending LLM quota. planRef supplies the current
       // plan as the merge base (avoids a stale closure over `plan`).
-      if (data && currentSessionId.current) {
+      if (data && sessionIdRef.current) {
         practiceSaved.current = { ...practiceSaved.current, [topic]: data };
         const base = planRef.current || {};
-        updateSession(currentSessionId.current, {
+        updateSession(sessionIdRef.current, {
           plan: { ...base, practiceQuestions: Object.values(practiceSaved.current) },
         });
       }
     },
     [updateSession],
   );
+
+  // --- Reload navigation (see ./lib/navStore.js) ------------------------------
+  // One-time restore on mount: put the user back where they were before a
+  // reload. A pointer with a sessionId reopens that history row (its plan/learn/
+  // revise content lives there) once history has loaded it; an ad-hoc setup with
+  // no row is rebuilt from the pointer's topics; otherwise we just restore view.
+  useEffect(() => {
+    if (didRestore.current) return;
+    const ptr = savedNav.current;
+    if (!ptr || (user?.id && ptr.userId && ptr.userId !== user.id)) {
+      didRestore.current = true; // nothing to restore (or a different user)
+      return;
+    }
+    if (ptr.sessionId) {
+      const row = sessions.find((s) => s.id === ptr.sessionId);
+      if (row) {
+        openSession(row); // sets mode/view to plan/study — override below
+        if (ptr.mode) setMode(ptr.mode);
+        if (ptr.view) setView(ptr.view);
+        didRestore.current = true;
+      } else if (!historyLoading) {
+        if (ptr.view) setView(ptr.view); // row gone (deleted elsewhere): give up
+        didRestore.current = true;
+      }
+      return; // else still loading — a later run (sessions changed) retries
+    }
+    if (ptr.hasSetup && Array.isArray(ptr.topics) && ptr.topics.length) {
+      setSetup({ topics: ptr.topics, examDate: '', hoursPerDay: null });
+      if (ptr.mode) setMode(ptr.mode);
+    }
+    if (ptr.view) setView(ptr.view);
+    didRestore.current = true;
+  }, [user?.id, sessions, historyLoading, openSession]);
+
+  // Persist the pointer on every navigation change, but only after the initial
+  // restore has run so the app's blank starting state can't overwrite it first.
+  useEffect(() => {
+    if (!didRestore.current) return;
+    writeNav({
+      userId: user?.id ?? null,
+      view,
+      mode,
+      sessionId,
+      hasSetup: !!setup,
+      topics: setup?.topics ?? null,
+    });
+  }, [user?.id, view, mode, setup, sessionId]);
 
   // A graded answer (Plan practice or Revise Q&A) schedules that topic for
   // spaced review: grade score -> SM-2 quality -> review_state upsert.
@@ -356,7 +419,7 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={signOut}
+              onClick={() => { clearNav(); signOut(); }}
               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
             >
               Sign out
