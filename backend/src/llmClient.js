@@ -34,14 +34,20 @@ export function getClientFor(cfg, keyIndex = 0) {
   let client = clients.get(cacheKey);
   if (!client) {
     // Bound each request so a slow/hung provider fails fast and the chain
-    // (llmJson.js) can fall through to the next one, instead of the SDK's
-    // 10-minute default holding the whole request open. maxRetries: 1 keeps a
-    // single quick retry for a transient blip without stalling fall-through.
+    // (llmJson.js) can fall through to the next provider/key WITHIN the caller's
+    // budget: the frontend aborts at 60s (api.js) and Vercel caps the function
+    // at 60s (vercel.json). A single attempt must therefore finish well under
+    // 60s — at the old 60s a single hung provider ate the whole budget before
+    // fallback could fire, surfacing as "The request took too long" on the
+    // client. 30s leaves room for a slow primary plus one fallback inside 60s.
+    // maxRetries: 0 because our own chain is the retry mechanism, and it stops
+    // the SDK from sleeping on a 429's Retry-After (which can block for many
+    // seconds) instead of falling through to the next key/provider immediately.
     client = new OpenAI({
       apiKey: keys[idx],
       baseURL: cfg.baseURL,
-      timeout: 60_000,
-      maxRetries: 1,
+      timeout: 30_000,
+      maxRetries: 0,
     });
     clients.set(cacheKey, client);
   }
