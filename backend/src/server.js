@@ -170,6 +170,15 @@ app.use((err, _req, res, _next) => {
   return res.status(500).json({ error: 'Unexpected server error.' });
 });
 
-app.listen(serverConfig.port, () => {
-  console.log(`LearnLoop backend listening on http://localhost:${serverConfig.port}`);
-});
+// Start a long-running listener only when this module is the process
+// entrypoint — local dev (`npm run dev` / `npm start`) and long-running hosts
+// like Render/Railway, none of which set VERCEL. On Vercel the app is imported
+// by api/index.js and served as a serverless function, where opening a listener
+// is wrong (and pointless), so we skip it there and export the app instead.
+if (!process.env.VERCEL) {
+  app.listen(serverConfig.port, () => {
+    console.log(`LearnLoop backend listening on http://localhost:${serverConfig.port}`);
+  });
+}
+
+export default app;
