@@ -6,6 +6,7 @@ import {
   buildSessionRow,
   insertRemote,
   deleteRemote,
+  updateRemote,
 } from '../lib/store.js';
 
 /**
@@ -80,5 +81,22 @@ export function useHistory(userId) {
     [userId],
   );
 
-  return { sessions, loading, saveSession, deleteSession };
+  const updateSession = useCallback(
+    async (id, patch) => {
+      if (!userId || !id || !patch) return;
+      setSessions((prev) => {
+        const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+        writeCache(userId, next);
+        return next;
+      });
+      try {
+        await updateRemote(id, patch);
+      } catch {
+        /* kept locally; syncs to other devices on a later successful write */
+      }
+    },
+    [userId],
+  );
+
+  return { sessions, loading, saveSession, deleteSession, updateSession };
 }

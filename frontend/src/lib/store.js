@@ -12,7 +12,9 @@ import { supabase } from './supabase.js';
 
 const TABLE = 'study_sessions';
 const CACHE_PREFIX = 'learnloop:history:v1:';
-const COLUMNS = 'id, created_at, topics, exam_date, hours_per_day, plan';
+// Select every column so optional, later-added content columns (learn / revise)
+// come back when present — and reads keep working before that migration is run.
+const COLUMNS = '*';
 
 function cacheKey(userId) {
   return `${CACHE_PREFIX}${userId}`;
@@ -75,5 +77,14 @@ export async function insertRemote(row) {
 /** Delete one session by id. Throws on error. */
 export async function deleteRemote(id) {
   const { error } = await supabase.from(TABLE).delete().eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Patch columns on one session (e.g. { learn } or { revise } once generated).
+ * Throws on error so the caller can keep the optimistic local copy.
+ */
+export async function updateRemote(id, patch) {
+  const { error } = await supabase.from(TABLE).update(patch).eq('id', id);
   if (error) throw error;
 }

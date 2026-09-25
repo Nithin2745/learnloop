@@ -35,6 +35,7 @@ async function runGenerate(reqRef, setCache, apiFn, topic) {
         ? { state: 'ready', data }
         : { state: 'error', error: 'No content was returned for this topic.' },
     }));
+    return data; // the caller persists this onto the open history row
   } catch (err) {
     reqRef.current.delete(topic); // allow a retry after failure
     setCache((cur) => ({
@@ -67,7 +68,8 @@ export default function App() {
   const [view, setView] = useState('study'); // 'study' | 'history'
 
   // Study history: local-first cache backed by Supabase (source of truth).
-  const { sessions, loading: historyLoading, saveSession, deleteSession } = useHistory(user?.id);
+  const { sessions, loading: historyLoading, saveSession, deleteSession, updateSession } =
+    useHistory(user?.id);
 
   // Spaced repetition: graded answers schedule topic reviews (local-first, SM-2).
   const { dueToday, recordReview } = useReviews(user?.id);
@@ -83,6 +85,12 @@ export default function App() {
   // Revise stays lazy per topic (generated when a topic is selected).
   const [reviseCache, setReviseCache] = useState({});
   const reviseReq = useRef(new Set());
+
+  // Which saved-history row (if any) the current session belongs to, so newly
+  // generated Learn/Revise can be written back onto it. reviseSaved mirrors the
+  // persisted { [topic]: data } map so each new topic merges on top of the rest.
+  const currentSessionId = useRef(null);
+  const reviseSaved = useRef({});
 
   const runPlan = useCallback(async (cfg) => {
     setPlanStatus('loading');
@@ -109,7 +117,13 @@ export default function App() {
     try {
       const { items } = await generateLearning(topics);
       if (learnToken.current !== token) return; // a newer run superseded this one
-      setLearn({ state: 'ready', items: items || [], error: '' });
+      const ready = items || [];
+      setLearn({ state: 'ready', items: ready, error: '' });
+      // Persist so reopening this session from History restores Learn instead of
+      // regenerating (best-effort; the optimistic cache already covers this device).
+      if (currentSessionId.current && ready.length) {
+        updateSession(currentSessionId.current, { learn: ready });
+      }
     } catch (err) {
       if (learnToken.current !== token) return;
       setLearn({
@@ -118,7 +132,7 @@ export default function App() {
         error: err.message || 'Could not prepare your topics.',
       });
     }
-  }, []);
+  }, [updateSession]);
 
   // Generate all Learn content the first time the user opens Learn mode.
   useEffect(() => {
@@ -130,6 +144,8 @@ export default function App() {
     setLearn({ state: 'idle', items: [], error: '' });
     setReviseCache({});
     reviseReq.current = new Set();
+    currentSessionId.current = null; // callers that open or save a row set this after
+    reviseSaved.current = {};
   }
 
   async function handleConfirm(cfg) {
@@ -141,12 +157,13 @@ export default function App() {
     // Save a history entry only for a freshly generated plan (retries reuse runPlan
     // directly and must not create a second row).
     if (result) {
-      saveSession({
+      const row = await saveSession({
         topics: cfg.topics,
         examDate: cfg.examDate,
         hoursPerDay: cfg.hoursPerDay,
         plan: result,
       });
+      currentSessionId.current = row?.id ?? null; // Learn/Revise write back onto this row
     }
   }
 
@@ -172,11 +189,38 @@ export default function App() {
     setPlanError('');
     setMode('plan');
     setView('study');
+    currentSessionId.current = session.id ?? null;
+
+    // Restore previously generated Learn/Revise so reopening doesn't regenerate
+    // (and re-spend LLM quota). Missing/empty => stay idle and generate on demand.
+    const savedLearn = Array.isArray(session.learn) ? session.learn : [];
+    if (savedLearn.length) setLearn({ state: 'ready', items: savedLearn, error: '' });
+
+    const savedRevise =
+      session.revise && typeof session.revise === 'object' ? session.revise : {};
+    const restored = {};
+    for (const [topic, data] of Object.entries(savedRevise)) {
+      if (!data) continue;
+      restored[topic] = { state: 'ready', data };
+      reviseReq.current.add(topic); // block RevisionMode's lazy re-fetch for this topic
+    }
+    if (Object.keys(restored).length) {
+      setReviseCache(restored);
+      reviseSaved.current = { ...savedRevise };
+    }
   }
 
   const generateRevise = useCallback(
-    (topic) => runGenerate(reviseReq, setReviseCache, generateRevision, topic),
-    [],
+    async (topic) => {
+      const data = await runGenerate(reviseReq, setReviseCache, generateRevision, topic);
+      // Persist the newly generated topic onto the open history row (merged with any
+      // already-saved topics) so it restores on reopen instead of regenerating.
+      if (data && currentSessionId.current) {
+        reviseSaved.current = { ...reviseSaved.current, [topic]: data };
+        updateSession(currentSessionId.current, { revise: reviseSaved.current });
+      }
+    },
+    [updateSession],
   );
 
   // A graded answer (Plan practice or Revise Q&A) schedules that topic for
