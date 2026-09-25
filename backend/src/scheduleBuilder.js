@@ -1,13 +1,14 @@
 /**
  * Deterministic study-plan expansion.
  *
- * The LLM only *judges* each topic (difficulty + a 1-5 weight) and writes its
- * practice questions; the day-by-day calendar is built here, in code. That
- * keeps the model's output small and constant-size no matter how far off the
- * exam is — so generation is fast and never truncates on a distant exam date
- * (the old design asked the model to emit one JSON entry per study day, which
- * ballooned to tens of thousands of tokens and either timed out or got cut off
- * mid-object). Output matches the exact shape the UI renders.
+ * The LLM only *judges* each topic (difficulty + a 1-5 weight); the day-by-day
+ * calendar is built here, in code, and practice questions are generated
+ * on-demand per topic (see questionsService.js) rather than baked into the plan.
+ * That keeps the model's output small and constant-size no matter how far off
+ * the exam is — so generation is fast and never truncates on a distant exam
+ * date (the old design asked the model to emit one JSON entry per study day,
+ * which ballooned to tens of thousands of tokens and either timed out or got
+ * cut off mid-object). Output matches the exact shape the UI renders.
  */
 
 const DIFFICULTY_WEIGHT = { easy: 1, medium: 2, hard: 3 };
@@ -35,6 +36,12 @@ function addDays(isoDate, n) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+/** True for Saturday/Sunday of a YYYY-MM-DD string (plain UTC date). */
+function isWeekendDay(isoDate) {
+  const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay();
+  return day === 0 || day === 6;
+}
+
 /** Light-revision days reserved at the end, scaled to the horizon. */
 function bufferDayCount(days) {
   if (days >= 8) return 2;
@@ -43,11 +50,22 @@ function bufferDayCount(days) {
 }
 
 /**
- * Expand a normalized compact plan ({ topics:[{name,difficulty,weight,
- * practiceQuestions}] }) into { totalDays, schedule, practiceQuestions }.
+ * Expand a normalized compact plan ({ topics:[{name,difficulty,weight}] }) into
+ * { totalDays, schedule, topics }. Practice questions are no longer part of the
+ * plan — they are fetched per topic on demand (questionsService.js).
  */
-export function buildStudyPlan(compact, { today, daysRemaining, hoursPerDay }) {
-  const H = hoursPerDay;
+export function buildStudyPlan(
+  compact,
+  { today, daysRemaining, hoursPerDay, weekdayHours, weekendHours },
+) {
+  // Weekday/weekend split: each side falls back to the flat hoursPerDay when a
+  // client doesn't send it. A weekend day can be given more (or less) study
+  // time than a weekday. Hmax caps a single session's size, since any session
+  // may land on the higher-budget day type.
+  const wkday = Number(weekdayHours) > 0 ? Number(weekdayHours) : hoursPerDay;
+  const wkend = Number(weekendHours) > 0 ? Number(weekendHours) : hoursPerDay;
+  const Hmax = Math.max(wkday, wkend);
+  const dayHours = (iso) => (isWeekendDay(iso) ? wkend : wkday);
   const D = daysRemaining;
   const buffer = bufferDayCount(D);
   const studyDays = Math.max(1, D - buffer);
@@ -68,7 +86,7 @@ export function buildStudyPlan(compact, { today, daysRemaining, hoursPerDay }) {
       weight: t.weight,
       remaining: totalHours,
       targetSessions,
-      perSession: clamp(roundHalf(totalHours / targetSessions), 0.5, H),
+      perSession: clamp(roundHalf(totalHours / targetSessions), 0.5, Hmax),
       sessions: 0,
       introduced: false,
       nextDay: 0,
@@ -77,10 +95,11 @@ export function buildStudyPlan(compact, { today, daysRemaining, hoursPerDay }) {
 
   const schedule = [];
 
-  // --- Study days: greedily fill each day up to the hour budget. ---
+  // --- Study days: greedily fill each day up to that day's hour budget. ---
   for (let d = 0; d < studyDays; d++) {
+    const date = addDays(today, d);
     const topics = [];
-    let budget = H;
+    let budget = dayHours(date);
     const usedToday = new Set();
 
     let guard = plans.length + 2;
@@ -118,7 +137,7 @@ export function buildStudyPlan(compact, { today, daysRemaining, hoursPerDay }) {
     }
 
     schedule.push({
-      date: addDays(today, d),
+      date,
       dayLabel: `Day ${d + 1}`,
       isBufferDay: false,
       topics,
@@ -128,8 +147,9 @@ export function buildStudyPlan(compact, { today, daysRemaining, hoursPerDay }) {
   // --- Buffer days: light review of the heaviest topics. ---
   const reviewOrder = [...plans].sort((a, b) => b.weight - a.weight);
   for (let b = 0; b < buffer; b++) {
+    const date = addDays(today, studyDays + b);
     const topics = [];
-    let budget = H;
+    let budget = dayHours(date);
     for (const p of reviewOrder) {
       if (budget < 0.5) break;
       const hours = roundHalf(Math.min(1, budget));
@@ -142,19 +162,18 @@ export function buildStudyPlan(compact, { today, daysRemaining, hoursPerDay }) {
       budget = half(budget - hours);
     }
     schedule.push({
-      date: addDays(today, studyDays + b),
+      date,
       dayLabel: `Day ${studyDays + b + 1}`,
       isBufferDay: true,
       topics,
     });
   }
 
-  const practiceQuestions = compact.topics.map((t) => ({
-    topic: t.name,
-    questions: t.practiceQuestions,
-  }));
-
-  return { totalDays: schedule.length, schedule, practiceQuestions };
+  return {
+    totalDays: schedule.length,
+    schedule,
+    topics: compact.topics.map((t) => t.name),
+  };
 }
 
 export { DIFFICULTY_WEIGHT };

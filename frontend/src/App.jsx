@@ -11,7 +11,7 @@ import DueToday from './components/DueToday.jsx';
 import { useAuth } from './auth/AuthProvider.jsx';
 import { useHistory } from './hooks/useHistory.js';
 import { useReviews } from './hooks/useReviews.js';
-import { generatePlan, generateLearning, generateRevision } from './api.js';
+import { generatePlan, generateLearning, generateRevision, generatePracticeQuestions } from './api.js';
 import { dedupeByBase } from './lib/topics.js';
 import { itemKeyForTopic } from './lib/sm2.js';
 
@@ -78,6 +78,13 @@ export default function App() {
   const [planStatus, setPlanStatus] = useState('idle'); // idle | loading | ready | error
   const [planError, setPlanError] = useState('');
 
+  // Keep a ref to the latest plan so generatePractice can merge new questions
+  // onto it when persisting without going stale inside its useCallback closure.
+  const planRef = useRef(null);
+  useEffect(() => {
+    planRef.current = plan;
+  }, [plan]);
+
   // Learn is generated UP FRONT in one batch when Learn mode is first opened.
   const [learn, setLearn] = useState({ state: 'idle', items: [], error: '' });
   const learnToken = useRef(0);
@@ -86,11 +93,18 @@ export default function App() {
   const [reviseCache, setReviseCache] = useState({});
   const reviseReq = useRef(new Set());
 
+  // Practice questions are also lazy per topic (the plan no longer bakes them
+  // in): each topic's questions are fetched when its panel is first opened.
+  const [practiceCache, setPracticeCache] = useState({});
+  const practiceReq = useRef(new Set());
+
   // Which saved-history row (if any) the current session belongs to, so newly
   // generated Learn/Revise can be written back onto it. reviseSaved mirrors the
   // persisted { [topic]: data } map so each new topic merges on top of the rest.
+  // practiceSaved mirrors { [topic]: { topic, questions } } for the same reason.
   const currentSessionId = useRef(null);
   const reviseSaved = useRef({});
+  const practiceSaved = useRef({});
 
   const runPlan = useCallback(async (cfg) => {
     setPlanStatus('loading');
@@ -100,6 +114,8 @@ export default function App() {
         topics: dedupeByBase(cfg.topics).join('\n'),
         examDate: cfg.examDate,
         hoursPerDay: cfg.hoursPerDay,
+        weekdayHours: cfg.weekdayHours,
+        weekendHours: cfg.weekendHours,
       });
       setPlan(result);
       setPlanStatus('ready');
@@ -144,8 +160,11 @@ export default function App() {
     setLearn({ state: 'idle', items: [], error: '' });
     setReviseCache({});
     reviseReq.current = new Set();
+    setPracticeCache({});
+    practiceReq.current = new Set();
     currentSessionId.current = null; // callers that open or save a row set this after
     reviseSaved.current = {};
+    practiceSaved.current = {};
   }
 
   async function handleConfirm(cfg) {
@@ -208,6 +227,25 @@ export default function App() {
       setReviseCache(restored);
       reviseSaved.current = { ...savedRevise };
     }
+
+    // Restore previously generated practice questions the same way. These live
+    // in the plan JSON (plan.practiceQuestions = [{ topic, questions }]); prime
+    // the cache so the lazy PracticeQuestionsTab renders old saved plans without
+    // re-fetching, and block a duplicate fetch when that topic's panel opens.
+    const savedPractice = Array.isArray(session.plan?.practiceQuestions)
+      ? session.plan.practiceQuestions
+      : [];
+    const restoredPractice = {};
+    for (const group of savedPractice) {
+      const topic = group?.topic;
+      if (!topic) continue;
+      restoredPractice[topic] = { state: 'ready', data: group };
+      practiceReq.current.add(topic);
+      practiceSaved.current[topic] = group;
+    }
+    if (Object.keys(restoredPractice).length) {
+      setPracticeCache(restoredPractice);
+    }
   }
 
   const generateRevise = useCallback(
@@ -218,6 +256,23 @@ export default function App() {
       if (data && currentSessionId.current) {
         reviseSaved.current = { ...reviseSaved.current, [topic]: data };
         updateSession(currentSessionId.current, { revise: reviseSaved.current });
+      }
+    },
+    [updateSession],
+  );
+
+  const generatePractice = useCallback(
+    async (topic) => {
+      const data = await runGenerate(practiceReq, setPracticeCache, generatePracticeQuestions, topic);
+      // Persist onto the open history row's plan JSON so reopening restores the
+      // questions instead of re-spending LLM quota. planRef supplies the current
+      // plan as the merge base (avoids a stale closure over `plan`).
+      if (data && currentSessionId.current) {
+        practiceSaved.current = { ...practiceSaved.current, [topic]: data };
+        const base = planRef.current || {};
+        updateSession(currentSessionId.current, {
+          plan: { ...base, practiceQuestions: Object.values(practiceSaved.current) },
+        });
       }
     },
     [updateSession],
@@ -350,7 +405,13 @@ export default function App() {
                   <PlanError message={planError} onRetry={() => runPlan(setup)} />
                 )}
                 {planStatus === 'ready' && plan && (
-                  <Results plan={plan} onReset={handleNewSetup} onGraded={handleGraded} />
+                  <Results
+                    plan={plan}
+                    practiceCache={practiceCache}
+                    onGeneratePractice={generatePractice}
+                    onReset={handleNewSetup}
+                    onGraded={handleGraded}
+                  />
                 )}
               </>
             )}

@@ -9,12 +9,14 @@ import {
   validateReviseInput,
   validateExpandInput,
   validateGradeInput,
+  validatePracticeQuestionsInput,
 } from './validation.js';
 import { generatePlan } from './planService.js';
 import { extractTopics } from './extractService.js';
 import { expandTopics } from './expandService.js';
 import { generateLearning } from './learnService.js';
 import { generateRevision } from './reviseService.js';
+import { generatePracticeQuestions } from './questionsService.js';
 import { gradeAnswer } from './gradeService.js';
 import { requireAuth } from './auth.js';
 
@@ -142,6 +144,20 @@ api.post('/revise', async (req, res) => {
     return res.json(result);
   } catch (err) {
     return sendLlmError(res, err, 'revise');
+  }
+});
+
+api.post('/practice-questions', async (req, res) => {
+  const { valid, errors, value } = validatePracticeQuestionsInput(req.body);
+  if (!valid) {
+    return res.status(400).json({ error: 'Invalid input.', details: errors });
+  }
+
+  try {
+    const result = await generatePracticeQuestions(value.topics);
+    return res.json(result);
+  } catch (err) {
+    return sendLlmError(res, err, 'practice-questions');
   }
 });
 

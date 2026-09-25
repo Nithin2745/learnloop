@@ -38,7 +38,9 @@ export default function SetupScreen({ onConfirm, error }) {
   const [picked, setPicked] = useState([]);
   const [removedPicked, setRemovedPicked] = useState(() => new Set());
   const [examDate, setExamDate] = useState('');
-  const [hoursPerDay, setHoursPerDay] = useState(3);
+  // Separate weekday/weekend study budgets — weekends usually allow more time.
+  const [weekdayHours, setWeekdayHours] = useState(2);
+  const [weekendHours, setWeekendHours] = useState(5);
 
   // "Break into subtopics": disambiguate + decompose the typed list into a
   // Subject → Unit → Topic tree (same shape as the PDF picker) so a broad entry
@@ -67,7 +69,8 @@ export default function SetupScreen({ onConfirm, error }) {
     [typedText, picked, removedPicked, expandChecked],
   );
   const min = todayStr();
-  const canContinue = allTopics.length > 0 && examDate && Number(hoursPerDay) > 0;
+  const canContinue =
+    allTopics.length > 0 && examDate && Number(weekdayHours) > 0 && Number(weekendHours) > 0;
 
   function removeTopic(t) {
     setTypedText((cur) => splitTopics(cur).filter((x) => x !== t).join('\n'));
@@ -138,7 +141,15 @@ export default function SetupScreen({ onConfirm, error }) {
   }
 
   function handleContinue() {
-    if (canContinue) onConfirm({ topics: allTopics, examDate, hoursPerDay: Number(hoursPerDay) });
+    if (canContinue) {
+      onConfirm({
+        topics: allTopics,
+        examDate,
+        weekdayHours: Number(weekdayHours),
+        weekendHours: Number(weekendHours),
+        hoursPerDay: Number(weekdayHours), // legacy fallback for older-shaped clients
+      });
+    }
   }
 
   return (
@@ -256,7 +267,7 @@ export default function SetupScreen({ onConfirm, error }) {
           </div>
         )}
 
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-6 sm:grid-cols-3">
           <div>
             <label htmlFor="examDate" className="mb-1.5 block text-sm font-medium text-slate-700">
               Exam date
@@ -271,17 +282,32 @@ export default function SetupScreen({ onConfirm, error }) {
             />
           </div>
           <div>
-            <label htmlFor="hoursPerDay" className="mb-1.5 block text-sm font-medium text-slate-700">
-              Study hours per day
+            <label htmlFor="weekdayHours" className="mb-1.5 block text-sm font-medium text-slate-700">
+              Weekday hours/day
             </label>
             <input
-              id="hoursPerDay"
+              id="weekdayHours"
               type="number"
               min={1}
               max={24}
               step={1}
-              value={hoursPerDay}
-              onChange={(e) => setHoursPerDay(e.target.value)}
+              value={weekdayHours}
+              onChange={(e) => setWeekdayHours(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            />
+          </div>
+          <div>
+            <label htmlFor="weekendHours" className="mb-1.5 block text-sm font-medium text-slate-700">
+              Weekend hours/day
+            </label>
+            <input
+              id="weekendHours"
+              type="number"
+              min={1}
+              max={24}
+              step={1}
+              value={weekendHours}
+              onChange={(e) => setWeekendHours(e.target.value)}
               className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
             />
           </div>

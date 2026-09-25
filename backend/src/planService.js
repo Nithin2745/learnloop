@@ -83,10 +83,7 @@ function normalizeCompact(plan) {
       }
       weight = Math.min(5, Math.max(1, weight));
 
-      const questions = Array.isArray(t?.practiceQuestions) ? t.practiceQuestions : [];
-      const practiceQuestions = questions.map(normalizeQuestion).filter(Boolean);
-
-      return { name, difficulty, weight, practiceQuestions };
+      return { name, difficulty, weight };
     })
     .filter((t) => t.name);
 

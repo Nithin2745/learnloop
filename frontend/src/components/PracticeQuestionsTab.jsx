@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import Accordion from './Accordion.jsx';
 import AnswerGrader from './AnswerGrader.jsx';
 import McqQuestion from './McqQuestion.jsx';
@@ -47,41 +48,86 @@ function QuestionItem({ index, item, topic, onGraded }) {
   );
 }
 
-export default function PracticeQuestionsTab({ groups, onGraded }) {
-  if (!groups?.length) {
-    return <p className="text-slate-500">No practice questions were generated.</p>;
-  }
+/**
+ * One topic's panel body. Questions are fetched lazily: this mounts only when
+ * its accordion panel is open (Accordion renders render() when open), so the
+ * first open triggers onGenerate for that topic. The cache entry (loading /
+ * ready / error) drives what is shown; App's ref-guard blocks duplicate fetches.
+ */
+function PanelBody({ topic, entry, onGenerate, onGraded }) {
+  useEffect(() => {
+    if (!entry) onGenerate(topic);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topic]);
 
-  const items = groups.map((group, i) => {
-    const count = group.questions?.length ?? 0;
-    return {
-      id: `${group.topic}-${i}`,
-      title: group.topic,
-      meta: `${count} question${count === 1 ? '' : 's'}`,
-      render: () => (
-        <>
-          <a
-            href={gfgSearchUrl(group.topic)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100"
+  const state = entry?.state ?? 'loading';
+
+  return (
+    <>
+      <a
+        href={gfgSearchUrl(topic)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100"
+      >
+        <span aria-hidden="true">📚</span>
+        Review “{topic}” on GeeksforGeeks
+        <span aria-hidden="true">↗</span>
+      </a>
+
+      {state === 'loading' && (
+        <div className="flex items-center gap-3 py-6 text-sm text-slate-500">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500" />
+          Writing practice questions…
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm">
+          <p className="text-rose-700">{entry?.error || 'Could not load this topic.'}</p>
+          <button
+            type="button"
+            onClick={() => onGenerate(topic)}
+            className="mt-2 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:bg-rose-100"
           >
-            <span aria-hidden="true">📚</span>
-            Review “{group.topic}” on GeeksforGeeks
-            <span aria-hidden="true">↗</span>
-          </a>
+            Try again
+          </button>
+        </div>
+      )}
+
+      {state === 'ready' &&
+        (entry.data?.questions?.length ? (
           <ol className="space-y-3">
-            {(group.questions || []).map((q, qi) => (
-              <QuestionItem
-                key={qi}
-                index={qi}
-                item={q}
-                topic={group.topic}
-                onGraded={onGraded}
-              />
+            {entry.data.questions.map((q, qi) => (
+              <QuestionItem key={qi} index={qi} item={q} topic={topic} onGraded={onGraded} />
             ))}
           </ol>
-        </>
+        ) : (
+          <p className="text-sm text-slate-500">No practice questions for this topic.</p>
+        ))}
+    </>
+  );
+}
+
+/**
+ * Practice Questions tab. `topics` is the flat topic list; each topic's
+ * questions are fetched on demand when its panel is first opened. `cache` maps
+ * topic -> { state:'loading'|'ready'|'error', data:{ topic, questions }, error }.
+ */
+export default function PracticeQuestionsTab({ topics, cache, onGenerate, onGraded }) {
+  if (!topics?.length) {
+    return <p className="text-slate-500">No topics to practice.</p>;
+  }
+
+  const items = topics.map((topic, i) => {
+    const entry = cache?.[topic];
+    const count = entry?.state === 'ready' ? entry.data?.questions?.length ?? 0 : null;
+    return {
+      id: `${topic}-${i}`,
+      title: topic,
+      meta: count === null ? '' : `${count} question${count === 1 ? '' : 's'}`,
+      render: () => (
+        <PanelBody topic={topic} entry={entry} onGenerate={onGenerate} onGraded={onGraded} />
       ),
     };
   });

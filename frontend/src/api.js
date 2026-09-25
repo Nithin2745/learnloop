@@ -82,6 +82,15 @@ export function generateRevision(topics) {
 }
 
 /**
+ * POST /api/practice-questions → { items: [{ topic, questions }] }.
+ * Practice questions are generated per topic on demand (the study plan only
+ * rates topics now), so this is called lazily as a topic panel is opened.
+ */
+export function generatePracticeQuestions(topics) {
+  return postJson('/api/practice-questions', { topics });
+}
+
+/**
  * POST /api/grade → { score, verdict, gotRight[], toFix[], modelAnswer }.
  * Grades a student's typed answer to a practice/revision question.
  */

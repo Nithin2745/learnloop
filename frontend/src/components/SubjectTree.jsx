@@ -19,8 +19,29 @@ export default function SubjectTree({
 
   const allChecked = (list) => list.length > 0 && list.every((t) => checked.has(t));
 
+  // Global control across every subject/unit, so a big extracted tree can be
+  // selected or cleared in one click instead of per subject.
+  const allFlat = subjects.flatMap(subjectTopics);
+  const everyChecked = allChecked(allFlat);
+  const selectedCount = allFlat.filter((t) => checked.has(t)).length;
+
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2.5">
+        <label className="flex items-center gap-2.5 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            className={cbCls}
+            checked={everyChecked}
+            onChange={() => onSetMany(allFlat, !everyChecked)}
+            aria-label={everyChecked ? 'Clear all topics' : 'Select all topics'}
+          />
+          {everyChecked ? 'Clear all' : 'Select all'}
+        </label>
+        <span className="text-xs text-slate-400">
+          {selectedCount} of {allFlat.length} selected
+        </span>
+      </div>
       {subjects.map((s) => {
         const sKey = `s:${s.name}`;
         const open = openKeys.has(sKey);

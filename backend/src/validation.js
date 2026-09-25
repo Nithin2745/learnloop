@@ -58,7 +58,8 @@ export function validateGeneratePlanInput(body) {
     }
   }
 
-  // hoursPerDay (default 3)
+  // hoursPerDay (default 3) — the fallback used whenever a weekday/weekend
+  // split isn't sent (older clients) or one side is left blank.
   let hoursPerDay = b.hoursPerDay;
   if (hoursPerDay === undefined || hoursPerDay === null || hoursPerDay === '') {
     hoursPerDay = 3;
@@ -68,6 +69,20 @@ export function validateGeneratePlanInput(body) {
     errors.push('hoursPerDay must be a number between 1 and 24.');
   }
 
+  // Optional weekday/weekend split: the scheduler gives more (or less) time on
+  // weekends. Each side is 1-24 and falls back to hoursPerDay when omitted.
+  const parseDayHours = (v, label) => {
+    if (v === undefined || v === null || v === '') return hoursPerDay;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0 || n > 24) {
+      errors.push(`${label} must be a number between 1 and 24.`);
+      return hoursPerDay;
+    }
+    return n;
+  };
+  const weekdayHours = parseDayHours(b.weekdayHours, 'weekdayHours');
+  const weekendHours = parseDayHours(b.weekendHours, 'weekendHours');
+
   if (errors.length > 0) {
     return { valid: false, errors, value: null };
   }
@@ -75,7 +90,7 @@ export function validateGeneratePlanInput(body) {
   return {
     valid: true,
     errors: [],
-    value: { topics, examDate, hoursPerDay, today, daysRemaining },
+    value: { topics, examDate, hoursPerDay, weekdayHours, weekendHours, today, daysRemaining },
   };
 }
 
@@ -134,6 +149,14 @@ export function validateLearnInput(body) {
 }
 
 export function validateReviseInput(body) {
+  return validateTopicsList(body);
+}
+
+/**
+ * Validate POST /api/practice-questions: same topics list as learn/revise.
+ * Questions are generated per topic on demand (plan no longer bakes them in).
+ */
+export function validatePracticeQuestionsInput(body) {
   return validateTopicsList(body);
 }
 
