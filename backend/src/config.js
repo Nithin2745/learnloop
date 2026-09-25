@@ -47,19 +47,32 @@ const PROVIDERS = {
 const DEFAULT_ORDER = ['gemini', 'groq', 'nvidia', 'openrouter'];
 
 const PLACEHOLDER = /your_.*_here/i;
-function hasRealKey(name) {
-  const v = (process.env[name] || '').trim();
-  return v.length > 0 && !PLACEHOLDER.test(v);
+
+/**
+ * Parse an env var that may hold ONE key or several comma-separated keys into a
+ * clean list of usable keys (blanks and "your_..._here" placeholders dropped).
+ * Multiple keys per provider let runJsonCompletion rotate keys round-robin, so a
+ * single key hitting its rate limit no longer takes the whole provider down.
+ * e.g. GEMINI_API_KEY=keyFromSetA,keyFromSetB
+ */
+function readKeys(envName) {
+  return (process.env[envName] || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((v) => v.length > 0 && !PLACEHOLDER.test(v));
 }
 
 function resolveProvider(name) {
   const p = PROVIDERS[name];
-  if (!p || !hasRealKey(p.apiKeyEnv)) return null;
+  if (!p) return null;
+  const apiKeys = readKeys(p.apiKeyEnv);
+  if (apiKeys.length === 0) return null;
   // Per-provider model override, e.g. GEMINI_MODEL=gemini-2.5-flash-lite.
   const perProviderModel = process.env[`${name.toUpperCase()}_MODEL`];
   return {
     provider: name,
-    apiKey: process.env[p.apiKeyEnv],
+    apiKeys, // one or more keys, rotated round-robin on rate-limit/error
+    apiKey: apiKeys[0], // back-compat: single-key accessors use the first
     baseURL: p.baseURL,
     model: perProviderModel || p.model,
     // Learn explanations now carry prerequisites, a worked example, and

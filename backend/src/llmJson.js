@@ -4,10 +4,16 @@ import { getClientFor } from './llmClient.js';
 /**
  * Shared LLM-as-JSON plumbing for every LearnLoop feature (plan, extract,
  * learn, revise). Centralizes json_object response_format, fence-tolerant
- * parsing, a caller-supplied shape check, one retry-with-nudge per provider,
- * and automatic fallback across the provider chain (config.js) when a provider
- * is rate-limited / erroring — so a throttled Groq no longer fails the request.
+ * parsing, a caller-supplied shape check, one retry-with-nudge per key, and
+ * round-robin rotation across the provider chain (config.js) and each
+ * provider's keys — so load spreads instead of always hammering the first
+ * provider/key until it 429s.
  */
+
+// Round-robin cursor for the starting provider. Seeded randomly so that on
+// serverless cold starts (a fresh module resets the cursor) concurrent
+// instances don't all begin at the same provider and stampede it.
+let providerCursor = Math.floor(Math.random() * 1_000_000);
 
 /** Remove a wrapping ```json ... ``` (or ``` ... ```) fence if present. */
 function stripFences(text) {
@@ -79,11 +85,13 @@ const DEFAULT_NUDGE = {
 /**
  * Run a chat completion expected to return a single JSON object.
  *
- * Walks the provider chain (config.js). For each provider it makes up to two
- * attempts (a parse/shape failure retries once with `nudge`); an API-level
- * failure (rate limit / server / rejected key) or a still-unparseable response
- * falls through to the next provider. If every provider fails, the last tagged
- * error is thrown.
+ * Round-robins the STARTING provider each call, then walks the chain (config.js)
+ * from there. Within a provider it rotates the provider's keys: an API-level
+ * failure (rate limit / server / rejected key) falls through to that provider's
+ * next key before moving to the next provider. Each key gets up to two attempts
+ * (a parse/shape failure retries once with `nudge`); a still-unparseable
+ * response is the model's doing, not the key's, so it skips straight to the next
+ * provider. If every provider fails, the last tagged error is thrown.
  *
  * `finalize` runs inside the loop: assert the shape (throw on mismatch) and
  * return the normalized result.
@@ -97,32 +105,56 @@ const DEFAULT_NUDGE = {
  */
 export async function runJsonCompletion({ messages, finalize, nudge = DEFAULT_NUDGE }) {
   const chain = getProviderChain(); // throws AUTH if nothing is configured
+
+  // Rotate the entry point so requests spread across providers instead of all
+  // starting at the first one; the full ring is still tried on failure.
+  const start = providerCursor % chain.length;
+  providerCursor = (providerCursor + 1) % 1_000_000;
+  const rotated = chain.slice(start).concat(chain.slice(0, start));
+
   let lastError = null;
 
-  for (const cfg of chain) {
-    const bundle = getClientFor(cfg);
+  for (const cfg of rotated) {
+    const keyCount = cfg.apiKeys?.length || 1;
+    let unparseable = false;
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const msgs = attempt === 1 ? messages : [...messages, nudge];
+    // Rotate this provider's keys: a key that rate-limits / is rejected falls
+    // through to the next key before we give up on the provider.
+    for (let keyIndex = 0; keyIndex < keyCount; keyIndex++) {
+      const bundle = getClientFor(cfg, keyIndex);
+      let apiFailed = false;
 
-      let content;
-      try {
-        content = await callModel(bundle, msgs);
-      } catch (err) {
-        lastError = tagApiError(err);
-        break; // API failure — stop retrying this provider, try the next one.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const msgs = attempt === 1 ? messages : [...messages, nudge];
+
+        let content;
+        try {
+          content = await callModel(bundle, msgs);
+        } catch (err) {
+          lastError = tagApiError(err);
+          apiFailed = true;
+          break; // this key's API failed — try the next key.
+        }
+
+        try {
+          return finalize(extractJson(content));
+        } catch {
+          lastError = parseFailed(); // parse/shape failure — loop retries once.
+        }
       }
 
-      try {
-        return finalize(extractJson(content));
-      } catch {
-        lastError = parseFailed(); // parse/shape failure — loop retries once.
+      // A parse failure is the model's doing, not the key's: another key of the
+      // same provider won't parse any better, so move on to the next provider.
+      if (!apiFailed) {
+        unparseable = true;
+        break;
       }
     }
 
-    if (chain.length > 1) {
+    if (rotated.length > 1 || keyCount > 1) {
       console.warn(
         `[llm] provider "${cfg.provider}" unavailable (${lastError?.code}); ` +
+          (unparseable ? 'unparseable output; ' : 'all keys exhausted; ') +
           'falling through to next provider',
       );
     }
