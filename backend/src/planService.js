@@ -4,6 +4,59 @@ import { buildStudyPlan } from './scheduleBuilder.js';
 
 const VALID_DIFFICULTY = new Set(['easy', 'medium', 'hard']);
 const DIFFICULTY_DEFAULT_WEIGHT = { easy: 1, medium: 2, hard: 3 };
+const VALID_QUESTION_TYPES = new Set(['mcq', 'fill', 'open']);
+
+/**
+ * Coerce one model-produced practice question into a clean, typed shape the UI
+ * renders directly. Unrecognized items (a bare string, or an object that merely
+ * has options) map to the safest matching type so older/looser payloads still
+ * render. Returns null for an unusable item so the caller can filter it out.
+ */
+export function normalizeQuestion(item) {
+  // A bare string is an open question with no reference answer.
+  if (!item || typeof item !== 'object') {
+    const q = String(item ?? '').trim();
+    return q ? { type: 'open', question: q, answer: '' } : null;
+  }
+
+  const question = String(item.question ?? item.q ?? '').trim();
+  if (!question) return null;
+
+  // Infer the type when it is missing: an options array => multiple-choice,
+  // otherwise open-ended (the historical default).
+  const rawType = String(item.type ?? '').toLowerCase();
+  const type = VALID_QUESTION_TYPES.has(rawType)
+    ? rawType
+    : Array.isArray(item.options)
+      ? 'mcq'
+      : 'open';
+
+  if (type === 'mcq') {
+    const options = (Array.isArray(item.options) ? item.options : [])
+      .map((o) => String(o ?? '').trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    if (options.length < 2) return null; // not a usable multiple-choice item
+    let correctIndex = Number(item.correctIndex ?? item.correct ?? item.answerIndex);
+    if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
+      correctIndex = 0;
+    }
+    const explanation = String(item.explanation ?? '').trim();
+    return { type: 'mcq', question, options, correctIndex, explanation };
+  }
+
+  if (type === 'fill') {
+    const answer = String(item.answer ?? item.a ?? '').trim();
+    if (!answer) return null; // can't grade a blank with no answer
+    const acceptable = (Array.isArray(item.acceptable) ? item.acceptable : [])
+      .map((s) => String(s ?? '').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    return { type: 'fill', question, answer, acceptable };
+  }
+
+  return { type: 'open', question, answer: String(item.answer ?? item.a ?? '').trim() };
+}
 
 /**
  * Minimal shape check so a malformed-but-parseable object triggers a retry.
@@ -31,18 +84,7 @@ function normalizeCompact(plan) {
       weight = Math.min(5, Math.max(1, weight));
 
       const questions = Array.isArray(t?.practiceQuestions) ? t.practiceQuestions : [];
-      const practiceQuestions = questions
-        .map((item) => {
-          // Tolerate either a bare string or a { question, answer } object.
-          if (item && typeof item === 'object') {
-            return {
-              question: String(item.question ?? item.q ?? ''),
-              answer: String(item.answer ?? item.a ?? ''),
-            };
-          }
-          return { question: String(item ?? ''), answer: '' };
-        })
-        .filter((q) => q.question);
+      const practiceQuestions = questions.map(normalizeQuestion).filter(Boolean);
 
       return { name, difficulty, weight, practiceQuestions };
     })

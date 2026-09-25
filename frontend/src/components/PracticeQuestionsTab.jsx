@@ -1,12 +1,20 @@
 import Accordion from './Accordion.jsx';
 import AnswerGrader from './AnswerGrader.jsx';
+import McqQuestion from './McqQuestion.jsx';
+import FillQuestion from './FillQuestion.jsx';
 import { gfgSearchUrl } from '../lib/resources.js';
 
 function QuestionItem({ index, item, topic, onGraded }) {
-  // Tolerate either a bare string or a { question, answer } object.
+  // Tolerate a bare string, a legacy { question, answer } object, or a typed
+  // { type, ... } object (mcq | fill | open).
   const question = typeof item === 'string' ? item : item?.question ?? '';
-  const answer = typeof item === 'string' ? '' : item?.answer ?? '';
   if (!question) return null;
+  const type = typeof item === 'object' && item ? item.type : undefined;
+
+  // mcq/fill grade locally (a boolean); map correct→100 / wrong→0 into the same
+  // { topic, score } hook the AI grader feeds, so every question type schedules
+  // the topic for spaced review via onGraded.
+  const onAnswered = onGraded ? (correct) => onGraded({ topic, score: correct ? 100 : 0 }) : undefined;
 
   return (
     <li className="rounded-xl bg-slate-50/70 p-3 text-sm">
@@ -14,15 +22,25 @@ function QuestionItem({ index, item, topic, onGraded }) {
         <span className="font-medium text-slate-400">{index + 1}.</span>
         <div className="min-w-0 flex-1">
           <p className="text-slate-700">{question}</p>
-          {/* Active recall: type an answer and get it graded (the stored answer,
-              when present, is the reference the grader marks against). A graded
-              answer schedules the topic for spaced review via onGraded. */}
-          <AnswerGrader
-            topic={topic}
-            question={question}
-            referenceAnswer={answer}
-            onGraded={onGraded ? (r) => onGraded({ topic, score: r.score }) : undefined}
-          />
+          {type === 'mcq' ? (
+            <McqQuestion
+              options={item.options}
+              correctIndex={item.correctIndex}
+              explanation={item.explanation}
+              onAnswered={onAnswered}
+            />
+          ) : type === 'fill' ? (
+            <FillQuestion answer={item.answer} acceptable={item.acceptable} onAnswered={onAnswered} />
+          ) : (
+            /* Active recall: type an answer and get it AI-graded (the stored
+               answer, when present, is the reference the grader marks against). */
+            <AnswerGrader
+              topic={topic}
+              question={question}
+              referenceAnswer={typeof item === 'string' ? '' : item?.answer ?? ''}
+              onGraded={onGraded ? (r) => onGraded({ topic, score: r.score }) : undefined}
+            />
+          )}
         </div>
       </div>
     </li>
